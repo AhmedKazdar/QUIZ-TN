@@ -1,0 +1,270 @@
+/* Base styles */
+
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0px 1000px white inset !important;
+  box-shadow: 0 0 0px 1000px white inset !important;
+  -webkit-text-fill-color: #000 !important;
+  color: #000 !important;
+  transition: background-color 5000s ease-in-out 0s;
+}
+.container {
+  padding: 2rem;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  background-color: #fafafa;
+  color: #333;
+  min-height: 100vh;
+  width: 100%;
+  margin: 0;
+  box-sizing: border-box;
+}
+
+.title {
+  font-size: 2.5rem;
+  font-weight: 600;
+  text-align: center;
+  color: #2c3e50;
+  margin-bottom: 2rem;
+}
+
+/* Button container */
+.button-container {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.btn {
+  padding: 0.6rem 1.5rem;
+  font-size: 1rem;
+  font-weight: 500;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+  width: auto; /* Ensure buttons scale appropriately */
+}
+
+.create-btn,
+.home-btn {
+  background-color: #3498db;
+  color: white;
+}
+
+.submit-btn {
+  background-color: #2ecc71;
+  color: white;
+}
+
+.cancel-btn {
+  background-color: #e74c3c;
+  color: white;
+}
+
+.btn:hover {
+  opacity: 0.9;
+  transform: scale(1.03);
+}
+
+/* Form styling */
+.form-container {
+  background: #fff;
+  padding: 2rem;
+  border-radius: 10px;
+  margin: 2rem auto;
+  max-width: 600px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+}
+
+.form-container h3 {
+  font-size: 1.75rem;
+  margin-bottom: 1.5rem;
+  text-align: center;
+  color: #34495e;
+}
+
+.form-group {
+  margin-bottom: 1.2rem;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+}
+
+.input-field {
+  width: 100%;
+  padding: 0.7rem;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  font-size: 1rem;
+  transition: border 0.2s ease-in-out;
+  background-color: #ccc;
+  color: #000;
+}
+
+.input-field:focus {
+  border-color: #3498db;
+  outline: none;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+/* Table styling */
+.questions-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 2rem;
+  background: white;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 2px 10px rgba(228, 228, 228, 0.05);
+}
+
+.questions-table th,
+.questions-table td {
+  padding: 1rem;
+  text-align: left;
+  border-bottom: 1px solid #eee;
+  font-size: 0.95rem;
+}
+
+.questions-table th {
+  background-color: #f5f6fa;
+  font-weight: 600;
+}
+
+.questions-table tr:hover {
+  background-color: #f0f8ff;
+}
+
+.questions-table tr:last-child td {
+  border-bottom: none;
+}
+
+/* Button actions in rows */
+.questions-table td button {
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  border-radius: 5px;
+  border: none;
+  margin-right: 0.5rem;
+}
+
+.questions-table td button.edit-btn {
+  background-color: #2980b9;
+  color: #fff;
+}
+
+.questions-table td button.delete-btn {
+  background-color: #c0392b;
+  color: #fff;
+}
+
+.questions-table td button.edit-btn:hover {
+  background-color: #21618c;
+}
+
+.questions-table td button.delete-btn:hover {
+  background-color: #a93226;
+}
+
+/* Pagination Controls */
+.pagination {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+.pagination button {
+  padding: 0.5rem 1rem;
+  font-size: 1rem;
+  background-color: #3498db;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.pagination button:hover {
+  opacity: 0.9;
+  transform: scale(1.05);
+}
+
+/* Responsive Improvements */
+@media (max-width: 768px) {
+  .questions-table {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+    border-spacing: 0; /* Optional: tighter table layout */
+  }
+
+  .questions-table th,
+  .questions-table td {
+    padding: 0.75rem 0.5rem;
+    font-size: 0.9rem;
+    text-align: left;
+  }
+
+  .form-container {
+    padding: 1.25rem;
+    width: 95%;
+    margin: 0 auto;
+    box-sizing: border-box;
+  }
+
+  .title {
+    font-size: 1.75rem;
+    text-align: center;
+    margin-bottom: 1rem;
+  }
+
+  .button-container {
+    flex-direction: column;
+    gap: 0.75rem;
+    align-items: stretch;
+  }
+
+  .btn {
+    width: 100%;
+    font-size: 1rem;
+    padding: 0.75rem;
+  }
+
+  .input-field {
+    padding: 0.5rem;
+    font-size: 0.95rem;
+    width: 100%;
+  }
+
+  .pagination {
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  /* Optional enhancement: spacing between form elements */
+  .form-container .form-group {
+    margin-bottom: 1rem;
+  }
+
+  /* Optional: Reduce image/icon sizes if present */
+  .icon,
+  img {
+    max-width: 100%;
+    height: auto;
+  }
+}

@@ -1,0 +1,104 @@
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0px 1000px white inset !important;
+  box-shadow: 0 0 0px 1000px white inset !important;
+  -webkit-text-fill-color: #000 !important;
+  color: #000 !important;
+  transition: background-color 5000s ease-in-out 0s;
+}
+/* Container */
+.responses-container {
+  padding: 20px;
+  background-color: #f4f4f9;
+  border-radius: 8px;
+}
+
+/* Header */
+.responses-header {
+  text-align: center;
+  color: #4caf50;
+}
+
+/* Table */
+.responses-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 20px;
+}
+
+.responses-table th,
+.responses-table td {
+  border: 1px solid #ddd;
+  padding: 12px;
+  text-align: center;
+}
+
+.responses-table th {
+  background-color: #4caf50;
+  color: white;
+}
+
+.responses-table tr:nth-child(even) {
+  background-color: #f9f9f9;
+}
+
+.responses-table tr:hover {
+  background-color: #e0f7fa;
+}
+
+/* Badges */
+.badge-correct {
+  color: white;
+  background-color: #4caf50;
+  padding: 5px 10px;
+  border-radius: 12px;
+  font-weight: bold;
+}
+
+.badge-wrong {
+  color: white;
+  background-color: #f44336;
+  padding: 5px 10px;
+  border-radius: 12px;
+  font-weight: bold;
+}
+
+/* Pagination */
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-top: 20px;
+}
+
+.pagination button {
+  margin: 0 10px;
+}
+
+/* Centered Buttons */
+.centered-button {
+  margin-top: 20px;
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Modal Form */
+.modal-box {
+  width: 400px;
+  margin: 50px auto;
+  background-color: white;
+  padding: 20px;
+  border-radius: 8px;
+}
+
+/* New Response Fields */
+.response-field {
+  margin-bottom: 20px;
+}
+
+.response-group {
+  margin-bottom: 10px;
+}

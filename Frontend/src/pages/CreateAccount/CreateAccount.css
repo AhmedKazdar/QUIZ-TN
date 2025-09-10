@@ -1,0 +1,338 @@
+/* Base styles */
+:root {
+  --primary-color: #4361ee;
+  --secondary-color: #3f37c9;
+  --accent-color: #4cc9f0;
+  --text-color: #2b2d42;
+  --text-light: #6c757d;
+  --light-bg: #f8f9fa;
+  --card-bg: #ffffff;
+  --error-color: #e63946;
+  --success-color: #2a9d8f;
+  --border-radius: 12px;
+  --box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
+  --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: var(--light-bg);
+  color: var(--text-color);
+  line-height: 1.6;
+}
+
+/* Container */
+.create-account-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  padding: 2rem;
+  background: linear-gradient(135deg, #f5f7ff 0%, #f0f4ff 100%);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Paper/Card */
+.create-account-paper {
+  position: relative;
+  padding: 3rem 2.5rem;
+  width: 100%;
+  max-width: 500px;
+  border-radius: var(--border-radius);
+  background: var(--card-bg);
+  box-shadow: var(--box-shadow);
+  z-index: 1;
+  overflow: hidden;
+  transition: var(--transition);
+}
+
+.create-account-paper::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 6px;
+  background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+}
+
+/* Header */
+.create-account-header {
+  text-align: center;
+  margin-bottom: 2.5rem;
+  position: relative;
+  padding-bottom: 1.5rem;
+}
+
+.create-account-header::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60px;
+  height: 3px;
+  background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+  border-radius: 3px;
+}
+
+.header-icon {
+  font-size: 3rem !important;
+  color: var(--primary-color);
+  margin-bottom: 1rem;
+  background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  display: inline-block;
+}
+
+.header-title {
+  margin: 0.5rem 0 0.75rem !important;
+  font-weight: 700 !important;
+  color: var(--text-color);
+  background: linear-gradient(90deg, var(--text-color), #444);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  letter-spacing: -0.5px;
+}
+
+.header-subtitle {
+  color: var(--text-light) !important;
+  font-size: 1rem !important;
+  margin: 0 !important;
+  font-weight: 400 !important;
+}
+
+/* Form */
+.create-account-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.form-field {
+  margin: 0.5rem 0 !important;
+}
+
+/* Input Fields */
+.MuiOutlinedInput-root {
+  border-radius: 10px !important;
+  transition: var(--transition) !important;
+  background-color: rgba(255, 255, 255, 0.9) !important;
+}
+
+.MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline {
+  border-color: var(--primary-color) !important;
+  border-width: 2px !important;
+  box-shadow: 0 0 0 4px rgba(67, 97, 238, 0.1) !important;
+}
+
+.MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline {
+  border-color: var(--primary-color) !important;
+}
+
+.MuiInputLabel-root.Mui-focused {
+  color: var(--primary-color) !important;
+  font-weight: 500 !important;
+}
+
+.input-icon {
+  color: var(--primary-color) !important;
+  opacity: 0.7;
+}
+
+/* Button */
+.submit-button {
+  margin-top: 1.5rem !important;
+  padding: 12px 24px !important;
+  border-radius: 50px !important;
+  font-weight: 600 !important;
+  font-size: 1rem !important;
+  text-transform: none !important;
+  letter-spacing: 0.5px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)) !important;
+  box-shadow: 0 4px 15px rgba(67, 97, 238, 0.3) !important;
+  position: relative;
+  overflow: hidden;
+  z-index: 1;
+}
+
+.submit-button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, var(--secondary-color), var(--primary-color));
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  z-index: -1;
+}
+
+.submit-button:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 8px 20px rgba(67, 97, 238, 0.4) !important;
+}
+
+.submit-button:hover::before {
+  opacity: 1;
+}
+
+.submit-button:active {
+  transform: translateY(0) !important;
+  box-shadow: 0 4px 10px rgba(67, 97, 238, 0.3) !important;
+}
+
+.submit-button.Mui-disabled {
+  background: #e0e0e0 !important;
+  color: #a0a0a0 !important;
+  transform: none !important;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Role Select */
+.role-select .MuiSelect-select {
+  padding: 12px 14px !important;
+  display: flex !important;
+  align-items: center;
+}
+
+.role-select .MuiOutlinedInput-notchedOutline {
+  border-color: rgba(0, 0, 0, 0.15) !important;
+}
+
+.role-select:hover .MuiOutlinedInput-notchedOutline {
+  border-color: var(--primary-color) !important;
+}
+
+/* Back Button */
+.back-button {
+  position: absolute !important;
+  top: 1rem !important;
+  left: 1rem !important;
+  color: var(--text-light) !important;
+  transition: var(--transition) !important;
+  z-index: 10;
+}
+
+.back-button:hover {
+  color: var(--primary-color) !important;
+  background-color: rgba(67, 97, 238, 0.1) !important;
+  transform: translateX(-2px) !important;
+}
+
+/* Visibility Toggle */
+.visibility-toggle {
+  color: var(--text-light) !important;
+  transition: var(--transition) !important;
+}
+
+.visibility-toggle:hover {
+  color: var(--primary-color) !important;
+  background-color: rgba(67, 97, 238, 0.1) !important;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* Responsive Design */
+@media (max-width: 600px) {
+  .create-account-container {
+    padding: 1rem;
+  }
+  
+  .create-account-paper {
+    padding: 2rem 1.5rem;
+  }
+  
+  .header-title {
+    font-size: 1.75rem !important;
+  }
+  
+  .header-subtitle {
+    font-size: 0.95rem !important;
+  }
+}
+
+/* Loading Spinner */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.MuiCircularProgress-root {
+  color: white !important;
+  width: 24px !important;
+  height: 24px !important;
+}
+
+/* Form Field Focus Animation */
+.MuiFormControl-root {
+  transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+/* Submit Button Pulse Effect */
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(67, 97, 238, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(67, 97, 238, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(67, 97, 238, 0);
+  }
+}
+
+.submit-container {
+  position: relative;
+  margin-top: 1rem;
+}
+
+.submit-button:not(.Mui-disabled) {
+  animation: pulse 2s infinite;
+}
+
+/* Decorative Elements */
+.create-account-container::before,
+.create-account-container::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(67, 97, 238, 0.1), rgba(63, 55, 201, 0.1));
+  z-index: 0;
+}
+
+.create-account-container::before {
+  width: 300px;
+  height: 300px;
+  top: -150px;
+  right: -150px;
+}
+
+.create-account-container::after {
+  width: 200px;
+  height: 200px;
+  bottom: -100px;
+  left: -100px;
+}

@@ -1,0 +1,80 @@
+/* Ensure the body and html fill the viewport */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+/* Main container takes full height of the page */
+.quiz-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* The container for the quiz content, which should grow and take available space */
+.quiz-container {
+  flex: 1; /* This makes the container grow to fill the available space */
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  overflow: hidden; /* Prevent scrolling within this container */
+}
+
+/* Make sure the footer (RandomImage) is pushed to the bottom */
+.quiz-footer {
+  margin-top: auto;
+  text-align: center;
+  padding: 20px 0;
+  background: #f4f4f4;
+}
+
+/* Ensure quiz content can scroll if needed */
+.quiz-content {
+  flex: 1;
+  overflow-y: auto; /* Allows scrolling if content is too tall */
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  text-align: center;
+}
+
+/* Style for the question text */
+.question-text {
+  margin-bottom: 20px;
+  font-size: 1.5rem;
+}
+
+/* Style for the response buttons */
+.response-button {
+  margin: 10px 0;
+}
+
+/* Style for the progress bar */
+.progress-bar {
+  margin-bottom: 20px;
+}
+
+/* Next and Finish buttons */
+.quiz-container .next-btn {
+  margin-top: 20px;
+  margin-bottom: 10px; /* Adds 10px space below the Next Question button */
+}
+
+.quiz-container .finish-btn {
+  margin-top: 20px;
+  margin-bottom: 10px; /* Adds 10px space below the Next Question button */
+}
+
+.dialog-title,
+.dialog-content {
+  text-align: center;
+}
+
+/* Style for restart and home buttons */
+.restart-btn,
+.home-btn {
+  margin: 10px;
+}

@@ -1,0 +1,30 @@
+.ranking-container {
+  padding: 20px;
+  max-width: 500px;
+  margin: auto;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+  text-align: center;
+}
+
+.ranking-container h2 {
+  margin-bottom: 20px;
+}
+
+.ranking-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid #eee;
+  font-weight: 500;
+}
+
+.rank {
+  color: #f39c12;
+  font-weight: bold;
+}
+
+.score {
+  color: #2ecc71;
+}

@@ -1,0 +1,283 @@
+import {
+  Controller,
+  Post,
+  Body,
+  UseGuards,
+  Get,
+  Param,
+  Put,
+  Delete,
+  HttpException,
+  HttpStatus,
+} from '@nestjs/common';
+import { UserService } from './user.service';
+import { AuthService } from '../auth/auth.service';
+import { InfobipOtpService } from '../infobip-otp/infobip-otp.service';
+import { JwtService } from '@nestjs/jwt';
+import { CreateUserDto } from './dto/create-user.dto';
+import { LoginDto } from './dto/login.dto';
+import { JwtAuthGuard } from './jwt-auth.guard';
+import {
+  ApiBadRequestResponse,
+  ApiCreatedResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
+import { parsePhoneNumberWithError } from 'libphonenumber-js';
+import { OnlineGateway } from 'src/gateways/online.gateway';
+
+@ApiTags('users')
+@Controller('users')
+export class UserController {
+  constructor(
+    private readonly userService: UserService,
+    private readonly authService: AuthService,
+    private readonly infobipOtpService: InfobipOtpService,
+    private readonly jwtService: JwtService,
+    private readonly onlineGateway: OnlineGateway,
+  ) {}
+
+  @Post('register')
+  @ApiOperation({ summary: 'Register a new user' })
+  @ApiCreatedResponse({ description: 'User registered successfully' })
+  @ApiBadRequestResponse({ description: 'Invalid data provided' })
+  async register(@Body() createUserDto: CreateUserDto) {
+    try {
+      // Format phone number if provided
+      if (createUserDto.phoneNumber) {
+        try {
+          const phoneNumber = parsePhoneNumberWithError(
+            createUserDto.phoneNumber,
+            'US',
+          );
+          createUserDto.phoneNumber = phoneNumber.format('E.164');
+        } catch (error) {
+          throw new HttpException(
+            'Invalid phone number format',
+            HttpStatus.BAD_REQUEST,
+          );
+        }
+      }
+
+      // Create the user
+      const { user, token } = await this.userService.create(createUserDto);
+      
+      return {
+        message: 'User registered successfully',
+        user: {
+          id: user._id,
+          username: user.username,
+          email: user.email,
+          phoneNumber: user.phoneNumber,
+          role: user.role,
+        },
+        token,
+      };
+    } catch (error) {
+      console.error('Error in user registration:', error);
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        error.message || 'Registration failed',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Post('register/verify')
+  @ApiOperation({ summary: 'Legacy OTP verification endpoint (deprecated)' })
+  @ApiCreatedResponse({ description: 'This endpoint is deprecated. Use /register instead.' })
+  @ApiBadRequestResponse({ description: 'This endpoint is no longer supported' })
+  async completeRegistration(): Promise<{ message: string }> {
+    throw new HttpException(
+      'This endpoint is no longer supported. Please use /register without OTP verification.',
+      HttpStatus.GONE,
+    );
+  }
+
+  @Post('login/phone')
+  @ApiOperation({ summary: 'Initiate phone-based login by sending OTP' })
+  @ApiCreatedResponse({ description: 'OTP sent successfully' })
+  @ApiBadRequestResponse({ description: 'Invalid phone number' })
+  async initiatePhoneLogin(
+    @Body('phoneNumber') phoneNumberStr: string
+  ): Promise<{ message: string }> {
+    try {
+      let formattedPhone: string;
+      try {
+        const phoneNumber = parsePhoneNumberWithError(phoneNumberStr, 'TN');
+        if (!phoneNumber.isValid()) {
+          throw new HttpException(
+            'Invalid phone number. Use +216 followed by 8 digits.',
+            HttpStatus.BAD_REQUEST,
+          );
+        }
+        formattedPhone = phoneNumber.format('E.164');
+      } catch (error) {
+        throw new HttpException(
+          'Invalid phone number. Use +216 followed by 8 digits.',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+      const user = await this.userService.findByPhoneNumber(formattedPhone);
+      if (!user) {
+        throw new HttpException(
+          'Phone number not registered',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+      await this.infobipOtpService.sendOtp(formattedPhone);
+      return { message: 'OTP sent successfully' };
+    } catch (error) {
+      console.error('Phone login initiation error:', error);
+      throw new HttpException(
+        error.message || 'Failed to initiate login',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+  }
+
+  @Post('login/phone/verify')
+  @ApiOperation({ summary: 'Verify OTP for phone-based login' })
+  @ApiCreatedResponse({ description: 'Login successful' })
+  @ApiBadRequestResponse({ description: 'Invalid OTP' })
+  async verifyPhoneLogin(
+    @Body('phoneNumber') phoneNumber: string,
+    @Body('otp') otp: string
+  ): Promise<{ access_token: string; username: string; role: string; userId: string }> {
+    try {
+      return await this.authService.verifyPhoneLogin(
+        phoneNumber,
+        otp
+      );
+    } catch (error) {
+      console.error('Phone login verification error:', error);
+      throw new HttpException(
+        error.message || 'Failed to verify login',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+  }
+
+  @Post('login')
+  @ApiOperation({ summary: 'Email/password login for web app' })
+  @ApiCreatedResponse({ description: 'Login successful' })
+  @ApiBadRequestResponse({ description: 'Invalid credentials' })
+  async login(
+    @Body() loginDto: LoginDto
+  ): Promise<{ access_token: string; username: string; role: string; userId: string }> {
+    try {
+      const token = await this.userService.login(loginDto);
+      const user = await this.userService.findByUsername(loginDto.username);
+      if (!user) {
+        throw new HttpException('User not found', HttpStatus.BAD_REQUEST);
+      }
+      await this.userService.updateLastActive(user._id.toString());
+      return {
+        access_token: token,
+        username: user.username,
+        role: user.role,
+        userId: user._id.toString(),
+      };
+    } catch (error) {
+      console.error('Email login error:', error);
+      throw new HttpException(
+        error.message || 'Failed to login',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+  }
+
+  @Put('update/:id')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Update user information' })
+  @ApiOkResponse({ description: 'User updated successfully' })
+  @ApiBadRequestResponse({ description: 'Invalid data provided' })
+  async updateUser(
+    @Param('id') id: string,
+    @Body() updateUserDto: CreateUserDto
+  ): Promise<{ message: string; user: any }> {
+    try {
+      if (updateUserDto.phoneNumber) {
+        const phoneNumber = parsePhoneNumberWithError(
+          updateUserDto.phoneNumber,
+          'TN',
+        );
+        if (!phoneNumber.isValid()) {
+          throw new HttpException(
+            'Invalid phone number. Use +216 followed by 8 digits.',
+            HttpStatus.BAD_REQUEST,
+          );
+        }
+        updateUserDto.phoneNumber = phoneNumber.format('E.164');
+      }
+      const updatedUser = await this.userService.updateUser(id, updateUserDto);
+      await this.userService.updateLastActive(id);
+      return { message: 'User updated successfully', user: updatedUser };
+    } catch (error) {
+      console.error('Update user error:', error);
+      throw new HttpException(
+        error.message || 'Failed to update user',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+  }
+
+  @Get()
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Get all users' })
+  @ApiOkResponse({ description: 'List of users' })
+  async getAllUsers(): Promise<{ users: any[] }> {
+    try {
+      const users = await this.userService.getAllUsers();
+      return { users };
+    } catch (error) {
+      console.error('Get all users error:', error);
+      throw new HttpException(
+        error.message || 'Failed to retrieve users',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+  }
+
+  @Get('online')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Get list of online users' })
+  @ApiOkResponse({ description: 'Online users retrieved successfully' })
+  @ApiBadRequestResponse({ description: 'Failed to retrieve online users' })
+  async getOnlineUsers() {
+    try {
+      const onlineUsers = this.onlineGateway
+        .getOnlineUsers()
+        .map((username) => ({
+          username,
+        }));
+      console.log(
+        'API /users/online response:',
+        onlineUsers.map((u) => u.username),
+      );
+      return { message: 'Online users retrieved successfully', onlineUsers };
+    } catch (error) {
+      console.error('Get online users error:', error);
+      throw new HttpException(
+        error.message || 'Failed to retrieve online users',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+  }
+  @Delete(':id')
+  @UseGuards(JwtAuthGuard)
+  async deleteUser(@Param('id') id: string) {
+    try {
+      return await this.userService.deleteUser(id);
+    } catch (error) {
+      console.error('Delete user error:', error);
+      throw new HttpException(
+        error.message || 'Failed to delete user',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+  }
+}
