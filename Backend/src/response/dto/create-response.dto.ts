@@ -3,7 +3,7 @@ import {
   IsBoolean,
   IsNotEmpty,
   IsMongoId,
-} from '@nestjs/class-validator';
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Types } from 'mongoose';
 

@@ -5,7 +5,7 @@ import { isAuthenticated } from "../../utils/auth";
 import axios from "axios";
 import { jwtDecode } from "jwt-decode";
 import io from "socket.io-client";
-import { FaHome, FaGamepad, FaUsers, FaQuestionCircle, FaUserPlus, FaSignOutAlt } from 'react-icons/fa';
+import SideBar from "../../components/Sidebar/SideBar";
 
 const Home = () => {
   const navigate = useNavigate();
@@ -19,18 +19,8 @@ const Home = () => {
   const [error, setError] = useState(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const socketRef = useRef(null);
-
-  // Toggle mobile menu
-  const toggleMenu = () => {
-    setIsMenuOpen(!isMenuOpen);
-    document.body.style.overflow = isMenuOpen ? 'auto' : 'hidden';
-  };
-
-  // Close menu when clicking on a nav item
-  const closeMenu = () => {
-    setIsMenuOpen(false);
-    document.body.style.overflow = 'auto';
-  };
+  const toggleMenu = () => setIsMenuOpen((prev) => !prev);
+  const closeMenu = () => setIsMenuOpen(false);
 
   useEffect(() => {
     console.log("Running Home useEffect");
@@ -233,100 +223,15 @@ const Home = () => {
       />
       
       {/* Sidebar */}
-      <div className={`sidebar ${isMenuOpen ? 'active' : ''}`}>
-        <div className="sidebar-header">
-          <div className="logo-container">
-            <img 
-              src="/src/assets/images/Quiz.png" 
-              alt="Quiz Logo" 
-              className="logo"
-            />
-            <h2>Quiz Dashboard</h2>
-          </div>
-        </div>
-        
-        <div className="sidebar-user">
-          <div className="user-avatar">{username?.charAt(0).toUpperCase()}</div>
-          <div className="user-details">
-            <span className="username">{username}</span>
-            <span className="user-role">{role}</span>
-          </div>
-        </div>
-
-        <nav className="sidebar-nav">
-          <ul>
-            <li 
-              className={`nav-item ${!showModeOptions ? 'active' : ''}`} 
-              onClick={() => {
-                setShowModeOptions(false);
-                setSelectedMode('');
-                closeMenu();
-              }}
-            >
-              <FaHome className="nav-icon" />
-              <span>Dashboard</span>
-            </li>
-            
-            <li 
-              className={`nav-item ${showModeOptions ? 'active' : ''}`} 
-              onClick={() => {
-                setShowModeOptions(true);
-                closeMenu();
-              }}
-            >
-              <FaGamepad className="nav-icon" />
-              <span>Play Game</span>
-            </li>
-
-            {/* Divider */}
-            <div className="nav-divider">
-              <span>Administration</span>
-            </div>
-
-            {role === 'admin' && (
-              <>
-                <li 
-                  className="nav-item" 
-                  onClick={() => {
-                    navigate("/questions");
-                    closeMenu();
-                  }}
-                >
-                  <FaQuestionCircle className="nav-icon" />
-                  <span>Manage Questions</span>
-                </li>
-                <li 
-                  className="nav-item" 
-                  onClick={() => {
-                    navigate("/responses");
-                    closeMenu();
-                  }}
-                >
-                  <FaUsers className="nav-icon" />
-                  <span>View Responses</span>
-                </li>
-                <li 
-                  className="nav-item" 
-                  onClick={() => {
-                    navigate("/admin/create-account");
-                    closeMenu();
-                  }}
-                >
-                  <FaUserPlus className="nav-icon" />
-                  <span>Create User</span>
-                </li>
-              </>
-            )}
-          </ul>
-        </nav>
-
-        <div className="sidebar-footer">
-          <button onClick={handleLogout} className="logout-btn">
-            <FaSignOutAlt className="logout-icon" />
-            Logout
-          </button>
-        </div>
-      </div>
+      <SideBar 
+        username={username}
+        role={role}
+        isOpen={isMenuOpen}
+        onLogout={() => {
+          handleLogout();
+          closeMenu();
+        }}
+      />
 
       {/* Main Content */}
       <div className="main-content">

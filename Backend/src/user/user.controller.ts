@@ -9,7 +9,10 @@ import {
   Delete,
   HttpException,
   HttpStatus,
+  UnauthorizedException,
 } from '@nestjs/common';
+import { Roles } from '../auth/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
 import { UserService } from './user.service';
 import { AuthService } from '../auth/auth.service';
 import { InfobipOtpService } from '../infobip-otp/infobip-otp.service';
@@ -225,11 +228,13 @@ export class UserController {
     }
   }
 
+  // This endpoint is kept for backward compatibility but marked as deprecated
   @Get()
-  @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: 'Get all users' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiOperation({ summary: 'Get all users (deprecated, use /users/all instead)' })
   @ApiOkResponse({ description: 'List of users' })
-  async getAllUsers(): Promise<{ users: any[] }> {
+  async getAllUsersLegacy(): Promise<{ users: any[] }> {
     try {
       const users = await this.userService.getAllUsers();
       return { users };
@@ -267,8 +272,37 @@ export class UserController {
       );
     }
   }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @Get('all')
+  async getAllUsers() {
+    console.log('GET /users/all endpoint hit');
+    try {
+      const users = await this.userService.findAll();
+      console.log('Found users:', users.length);
+      return users.map(user => ({
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        phoneNumber: user.phoneNumber,
+        role: user.role,
+        isActive: user.lastActive ? new Date().getTime() - new Date(user.lastActive).getTime() < 5 * 60 * 1000 : false,
+        lastActive: user.lastActive,
+        createdAt: user.createdAt
+      }));
+    } catch (error) {
+      console.error('Error fetching users:', error);
+      throw new HttpException('Failed to fetch users', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
   @Delete(':id')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiOperation({ summary: 'Delete a user' })
+  @ApiOkResponse({ description: 'User deleted successfully' })
+  @ApiBadRequestResponse({ description: 'Failed to delete user' })
   async deleteUser(@Param('id') id: string) {
     try {
       return await this.userService.deleteUser(id);

@@ -8,10 +8,11 @@ import Login from "./pages/Login/Login";
 import Home from "./pages/Home/Home";
 import PrivateRoute from "./components/PrivateRoute";
 import AdminRoute from "./components/AdminRoute";
-import QuestionsTable from "./components/Question/Question";
-import ResponsesPage from "./components/Response/ResponsesPages";
 import QuizGame from "./pages/QuizGame/QuizGame";
 import Otp from "./pages/Otp/Otp";
+import QuestionsTable from "./pages/Question/Question";
+import ResponsesPage from "./pages/Response/ResponsesPages";
+import UsersList from "./pages/UsersList/UsersList";
 
 const router = createBrowserRouter(
   [
@@ -34,6 +35,16 @@ const router = createBrowserRouter(
         <PrivateRoute>
           <AdminRoute>
             <CreateAccount />
+          </AdminRoute>
+        </PrivateRoute>
+      ),
+    },
+    {
+      path: "/admin/users",
+      element: (
+        <PrivateRoute>
+          <AdminRoute>
+            <UsersList />
           </AdminRoute>
         </PrivateRoute>
       ),

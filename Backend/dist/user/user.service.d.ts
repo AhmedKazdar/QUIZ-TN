@@ -30,5 +30,6 @@ export declare class UserService {
     deleteUser(id: string): Promise<{
         message: string;
     }>;
+    findAll(): Promise<UserDocument[]>;
     login(loginDto: LoginDto): Promise<string>;
 }

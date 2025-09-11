@@ -5,7 +5,7 @@ import {
   IsOptional,
   IsPhoneNumber,
   IsString,
-} from '@nestjs/class-validator';
+} from 'class-validator';
 import { ApiProperty, OmitType } from '@nestjs/swagger';
 
 export class CreateUserDto {

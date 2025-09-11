@@ -10,7 +10,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CreateResponseDto = void 0;
-const class_validator_1 = require("@nestjs/class-validator");
+const class_validator_1 = require("class-validator");
 const swagger_1 = require("@nestjs/swagger");
 const mongoose_1 = require("mongoose");
 class CreateResponseDto {

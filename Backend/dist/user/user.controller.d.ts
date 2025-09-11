@@ -45,7 +45,7 @@ export declare class UserController {
         message: string;
         user: any;
     }>;
-    getAllUsers(): Promise<{
+    getAllUsersLegacy(): Promise<{
         users: any[];
     }>;
     getOnlineUsers(): Promise<{
@@ -54,6 +54,16 @@ export declare class UserController {
             username: string;
         }[];
     }>;
+    getAllUsers(): Promise<{
+        id: import("mongoose").Types.ObjectId;
+        username: string;
+        email: string | null | undefined;
+        phoneNumber: string | undefined;
+        role: string;
+        isActive: boolean;
+        lastActive: Date;
+        createdAt: Date;
+    }[]>;
     deleteUser(id: string): Promise<{
         message: string;
     }>;

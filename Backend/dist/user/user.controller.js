@@ -14,6 +14,8 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.UserController = void 0;
 const common_1 = require("@nestjs/common");
+const roles_decorator_1 = require("../auth/roles.decorator");
+const roles_guard_1 = require("../auth/roles.guard");
 const user_service_1 = require("./user.service");
 const auth_service_1 = require("../auth/auth.service");
 const infobip_otp_service_1 = require("../infobip-otp/infobip-otp.service");
@@ -144,7 +146,7 @@ let UserController = class UserController {
             throw new common_1.HttpException(error.message || 'Failed to update user', common_1.HttpStatus.BAD_REQUEST);
         }
     }
-    async getAllUsers() {
+    async getAllUsersLegacy() {
         try {
             const users = await this.userService.getAllUsers();
             return { users };
@@ -167,6 +169,27 @@ let UserController = class UserController {
         catch (error) {
             console.error('Get online users error:', error);
             throw new common_1.HttpException(error.message || 'Failed to retrieve online users', common_1.HttpStatus.BAD_REQUEST);
+        }
+    }
+    async getAllUsers() {
+        console.log('GET /users/all endpoint hit');
+        try {
+            const users = await this.userService.findAll();
+            console.log('Found users:', users.length);
+            return users.map(user => ({
+                id: user._id,
+                username: user.username,
+                email: user.email,
+                phoneNumber: user.phoneNumber,
+                role: user.role,
+                isActive: user.lastActive ? new Date().getTime() - new Date(user.lastActive).getTime() < 5 * 60 * 1000 : false,
+                lastActive: user.lastActive,
+                createdAt: user.createdAt
+            }));
+        }
+        catch (error) {
+            console.error('Error fetching users:', error);
+            throw new common_1.HttpException('Failed to fetch users', common_1.HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
     async deleteUser(id) {
@@ -244,13 +267,14 @@ __decorate([
 ], UserController.prototype, "updateUser", null);
 __decorate([
     (0, common_1.Get)(),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
-    (0, swagger_1.ApiOperation)({ summary: 'Get all users' }),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)('admin'),
+    (0, swagger_1.ApiOperation)({ summary: 'Get all users (deprecated, use /users/all instead)' }),
     (0, swagger_1.ApiOkResponse)({ description: 'List of users' }),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", Promise)
-], UserController.prototype, "getAllUsers", null);
+], UserController.prototype, "getAllUsersLegacy", null);
 __decorate([
     (0, common_1.Get)('online'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
@@ -262,8 +286,20 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], UserController.prototype, "getOnlineUsers", null);
 __decorate([
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)('admin'),
+    (0, common_1.Get)('all'),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], UserController.prototype, "getAllUsers", null);
+__decorate([
     (0, common_1.Delete)(':id'),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)('admin'),
+    (0, swagger_1.ApiOperation)({ summary: 'Delete a user' }),
+    (0, swagger_1.ApiOkResponse)({ description: 'User deleted successfully' }),
+    (0, swagger_1.ApiBadRequestResponse)({ description: 'Failed to delete user' }),
     __param(0, (0, common_1.Param)('id')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),

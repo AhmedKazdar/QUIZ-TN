@@ -296,6 +296,10 @@ export class UserService {
     return { message: 'User deleted successfully' };
   }
 
+  async findAll(): Promise<UserDocument[]> {
+    return this.userModel.find().select('-password -refreshToken').exec();
+  }
+
   async login(loginDto: LoginDto): Promise<string> {
     const { username, password } = loginDto;
     

@@ -4,7 +4,7 @@ import {
   IsOptional,
   IsMongoId,
   IsNotEmpty,
-} from '@nestjs/class-validator';
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class UpdateResponseDto {

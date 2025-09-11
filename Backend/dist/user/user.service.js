@@ -224,6 +224,9 @@ let UserService = class UserService {
         }
         return { message: 'User deleted successfully' };
     }
+    async findAll() {
+        return this.userModel.find().select('-password -refreshToken').exec();
+    }
     async login(loginDto) {
         const { username, password } = loginDto;
         const user = await this.userModel.findOne({ username }).exec();

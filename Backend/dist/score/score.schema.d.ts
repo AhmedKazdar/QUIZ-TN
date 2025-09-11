@@ -5,11 +5,11 @@ export declare class Score {
     score: number;
     createdAt: Date;
 }
-export declare const ScoreSchema: import("mongoose").Schema<Score, import("mongoose").Model<Score, any, any, any, Document<unknown, any, Score> & Score & {
+export declare const ScoreSchema: import("mongoose").Schema<Score, import("mongoose").Model<Score, any, any, any, Document<unknown, any, Score, any, {}> & Score & {
     _id: Types.ObjectId;
 } & {
     __v: number;
-}, any>, {}, {}, {}, {}, import("mongoose").DefaultSchemaOptions, Score, Document<unknown, {}, import("mongoose").FlatRecord<Score>> & import("mongoose").FlatRecord<Score> & {
+}, any>, {}, {}, {}, {}, import("mongoose").DefaultSchemaOptions, Score, Document<unknown, {}, import("mongoose").FlatRecord<Score>, {}, import("mongoose").ResolveSchemaOptions<import("mongoose").DefaultSchemaOptions>> & import("mongoose").FlatRecord<Score> & {
     _id: Types.ObjectId;
 } & {
     __v: number;
