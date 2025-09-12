@@ -10,6 +10,8 @@ import {
   HttpException,
   HttpStatus,
   UnauthorizedException,
+  Request,
+  Req,
 } from '@nestjs/common';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
@@ -20,6 +22,8 @@ import { JwtService } from '@nestjs/jwt';
 import { CreateUserDto } from './dto/create-user.dto';
 import { LoginDto } from './dto/login.dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
+import { Request as ExpressRequest } from 'express';
+import * as bcrypt from 'bcrypt';
 import {
   ApiBadRequestResponse,
   ApiCreatedResponse,
@@ -193,6 +197,32 @@ export class UserController {
     }
   }
 
+  @Get('me')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Get current user profile' })
+  @ApiOkResponse({ description: 'Returns the current user profile' })
+  @ApiBadRequestResponse({ description: 'User not found' })
+  async getCurrentUser(@Request() req) {
+    try {
+      const userId = req.user.userId;
+      const user = await this.userService.findById(userId);
+      
+      if (!user) {
+        throw new HttpException('User not found', HttpStatus.NOT_FOUND);
+      }
+      
+      // Return only necessary user data (exclude sensitive info like password)
+      const { password, ...result } = user.toObject();
+      return result;
+    } catch (error) {
+      console.error('Error fetching user profile:', error);
+      throw new HttpException(
+        error.message || 'Failed to fetch user profile',
+        error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
   @Put('update/:id')
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Update user information' })
@@ -298,20 +328,32 @@ export class UserController {
   }
 
   @Delete(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
-  @ApiOperation({ summary: 'Delete a user' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @ApiOperation({ summary: 'Delete a user (admin only)' })
   @ApiOkResponse({ description: 'User deleted successfully' })
-  @ApiBadRequestResponse({ description: 'Failed to delete user' })
-  async deleteUser(@Param('id') id: string) {
-    try {
-      return await this.userService.deleteUser(id);
-    } catch (error) {
-      console.error('Delete user error:', error);
-      throw new HttpException(
-        error.message || 'Failed to delete user',
-        HttpStatus.BAD_REQUEST,
-      );
+  @ApiBadRequestResponse({ description: 'Invalid user ID' })
+  async remove(@Param('id') id: string) {
+    return this.userService.deleteUser(id);
+  }
+
+  @Post('reset-password')
+  @ApiOperation({ summary: 'Reset user password' })
+  @ApiOkResponse({ description: 'Password reset successfully' })
+  @ApiBadRequestResponse({ description: 'Invalid request' })
+  async resetPassword(
+    @Body() resetPasswordDto: { username: string; newPassword: string },
+  ) {
+    const user = await this.userService.findByUsername(resetPasswordDto.username);
+    if (!user) {
+      throw new HttpException('User not found', HttpStatus.NOT_FOUND);
     }
+
+    // Update the user's password
+    const hashedPassword = await bcrypt.hash(resetPasswordDto.newPassword, 10);
+    user.password = hashedPassword;
+    await user.save();
+
+    return { message: 'Password reset successfully' };
   }
 }

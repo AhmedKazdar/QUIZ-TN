@@ -13,6 +13,7 @@ import Otp from "./pages/Otp/Otp";
 import QuestionsTable from "./pages/Question/Question";
 import ResponsesPage from "./pages/Response/ResponsesPages";
 import UsersList from "./pages/UsersList/UsersList";
+import Profile from "./pages/Profile/Profile";
 
 const router = createBrowserRouter(
   [
@@ -78,6 +79,14 @@ const router = createBrowserRouter(
       element: (
         <PrivateRoute>
           <ResponsesPage />
+        </PrivateRoute>
+      ),
+    },
+    {
+      path: "/profile",
+      element: (
+        <PrivateRoute>
+          <Profile />
         </PrivateRoute>
       ),
     },

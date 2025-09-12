@@ -71,6 +71,9 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api', app, document);
 
+  // Set global prefix for all routes
+  app.setGlobalPrefix('api');
+
   // Validation pipes for incoming requests
   app.useGlobalPipes(
     new ValidationPipe({

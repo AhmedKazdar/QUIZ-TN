@@ -17,41 +17,75 @@ export class AuthService {
 
   // Web App: Email/Password Login
   async login(username: string, password: string) {
-    const user = await this.userService.findByUsername(username);
-    if (!user) {
-      console.log(`Login attempt with invalid username: ${username}`);
-      throw new UnauthorizedException('Invalid credentials');
+    console.log(`[AuthService] Login attempt for username: ${username}`);
+    
+    try {
+      if (!username || !password) {
+        console.log('[AuthService] Missing username or password');
+        throw new UnauthorizedException('Username and password are required');
+      }
+
+      // First try to find by username
+      console.log(`[AuthService] Looking up user by username: ${username}`);
+      let user = await this.userService.findByUsername(username);
+      
+      // If not found by username, try by email
+      if (!user && username.includes('@')) {
+        console.log(`[AuthService] User not found by username, trying email: ${username}`);
+        user = await this.userService.findByEmail(username);
+      }
+      
+      if (!user) {
+        console.log(`[AuthService] User not found: ${username}`);
+        throw new UnauthorizedException('Invalid username or password');
+      }
+
+      console.log(`[AuthService] Found user: ${user._id} (${user.username})`);
+
+      if (!user.password) {
+        console.log(`[AuthService] No password set for user: ${user._id}`);
+        throw new UnauthorizedException(
+          'No password set for this account. Please use password reset.',
+        );
+      }
+
+      console.log('[AuthService] Verifying password...');
+      const isPasswordValid = await bcrypt.compare(password, user.password);
+      console.log(`[AuthService] Password validation result: ${isPasswordValid}`);
+      
+      if (!isPasswordValid) {
+        console.log(`[AuthService] Failed password attempt for user: ${user._id}`);
+        throw new UnauthorizedException('Invalid username or password');
+      }
+
+      // Create consistent user data structure
+      const userData = {
+        userId: user._id.toString(),
+        username: user.username,
+        email: user.email || '',
+        phoneNumber: user.phoneNumber || '',
+        role: user.role || 'user'
+      };
+
+      // Create JWT payload with only necessary claims
+      const payload = {
+        sub: user._id.toString(),
+        username: user.username,
+        role: user.role || 'user'
+      };
+
+      console.log('Generating token with payload:', payload);
+      const token = this.jwtService.sign(payload);
+
+      // Return both token and user data
+      return {
+        access_token: token,
+        ...userData
+      };
+    } catch (error) {
+      console.error('Login error:', error);
+      throw error; // Re-throw to be handled by the controller
     }
-
-    if (!user.password) {
-      console.log(`No password set for username: ${username}`);
-      throw new UnauthorizedException(
-        'User has no password set. Use phone-based login.',
-      );
-    }
-
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-    if (!isPasswordValid) {
-      console.log(`Failed password attempt for username: ${username}`);
-      throw new UnauthorizedException('Invalid credentials');
-    }
-
-    const payload = {
-      phoneNumber: user.phoneNumber,
-      email: user.email || '',
-      sub: user._id.toString(),
-      username: user.username,
-      role: user.role,
-    };
-    console.log('Generating token with payload:', payload);
-    const token = this.jwtService.sign(payload);
-
-    return {
-      access_token: token,
-      username: user.username,
-      role: user.role,
-      userId: user._id.toString(),
-    };
   }
 
   // Mobile App: Phone/OTP Login

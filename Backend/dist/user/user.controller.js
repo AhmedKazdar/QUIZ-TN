@@ -23,6 +23,7 @@ const jwt_1 = require("@nestjs/jwt");
 const create_user_dto_1 = require("./dto/create-user.dto");
 const login_dto_1 = require("./dto/login.dto");
 const jwt_auth_guard_1 = require("./jwt-auth.guard");
+const bcrypt = require("bcrypt");
 const swagger_1 = require("@nestjs/swagger");
 const libphonenumber_js_1 = require("libphonenumber-js");
 const online_gateway_1 = require("../gateways/online.gateway");
@@ -128,6 +129,21 @@ let UserController = class UserController {
             throw new common_1.HttpException(error.message || 'Failed to login', common_1.HttpStatus.BAD_REQUEST);
         }
     }
+    async getCurrentUser(req) {
+        try {
+            const userId = req.user.userId;
+            const user = await this.userService.findById(userId);
+            if (!user) {
+                throw new common_1.HttpException('User not found', common_1.HttpStatus.NOT_FOUND);
+            }
+            const { password, ...result } = user.toObject();
+            return result;
+        }
+        catch (error) {
+            console.error('Error fetching user profile:', error);
+            throw new common_1.HttpException(error.message || 'Failed to fetch user profile', error.status || common_1.HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
     async updateUser(id, updateUserDto) {
         try {
             if (updateUserDto.phoneNumber) {
@@ -192,14 +208,18 @@ let UserController = class UserController {
             throw new common_1.HttpException('Failed to fetch users', common_1.HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
-    async deleteUser(id) {
-        try {
-            return await this.userService.deleteUser(id);
+    async remove(id) {
+        return this.userService.deleteUser(id);
+    }
+    async resetPassword(resetPasswordDto) {
+        const user = await this.userService.findByUsername(resetPasswordDto.username);
+        if (!user) {
+            throw new common_1.HttpException('User not found', common_1.HttpStatus.NOT_FOUND);
         }
-        catch (error) {
-            console.error('Delete user error:', error);
-            throw new common_1.HttpException(error.message || 'Failed to delete user', common_1.HttpStatus.BAD_REQUEST);
-        }
+        const hashedPassword = await bcrypt.hash(resetPasswordDto.newPassword, 10);
+        user.password = hashedPassword;
+        await user.save();
+        return { message: 'Password reset successfully' };
     }
 };
 exports.UserController = UserController;
@@ -254,6 +274,17 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], UserController.prototype, "login", null);
 __decorate([
+    (0, common_1.Get)('me'),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, swagger_1.ApiOperation)({ summary: 'Get current user profile' }),
+    (0, swagger_1.ApiOkResponse)({ description: 'Returns the current user profile' }),
+    (0, swagger_1.ApiBadRequestResponse)({ description: 'User not found' }),
+    __param(0, (0, common_1.Request)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], UserController.prototype, "getCurrentUser", null);
+__decorate([
     (0, common_1.Put)('update/:id'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, swagger_1.ApiOperation)({ summary: 'Update user information' }),
@@ -295,16 +326,26 @@ __decorate([
 ], UserController.prototype, "getAllUsers", null);
 __decorate([
     (0, common_1.Delete)(':id'),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
     (0, roles_decorator_1.Roles)('admin'),
-    (0, swagger_1.ApiOperation)({ summary: 'Delete a user' }),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
+    (0, swagger_1.ApiOperation)({ summary: 'Delete a user (admin only)' }),
     (0, swagger_1.ApiOkResponse)({ description: 'User deleted successfully' }),
-    (0, swagger_1.ApiBadRequestResponse)({ description: 'Failed to delete user' }),
+    (0, swagger_1.ApiBadRequestResponse)({ description: 'Invalid user ID' }),
     __param(0, (0, common_1.Param)('id')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
-], UserController.prototype, "deleteUser", null);
+], UserController.prototype, "remove", null);
+__decorate([
+    (0, common_1.Post)('reset-password'),
+    (0, swagger_1.ApiOperation)({ summary: 'Reset user password' }),
+    (0, swagger_1.ApiOkResponse)({ description: 'Password reset successfully' }),
+    (0, swagger_1.ApiBadRequestResponse)({ description: 'Invalid request' }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], UserController.prototype, "resetPassword", null);
 exports.UserController = UserController = __decorate([
     (0, swagger_1.ApiTags)('users'),
     (0, common_1.Controller)('users'),

@@ -1,9 +1,16 @@
-/* Base styles */
+/* Modern Form Styling */
 :root {
-  --primary-color: #4361ee;
-  --secondary-color: #3f37c9;
-  --accent-color: #4cc9f0;
-  --text-color: #2b2d42;
+  --primary: #6C63FF;
+  --primary-light: #8A85FF;
+  --secondary: #4A45B1;
+  --dark: #1A1A2E;
+  --darker: #16213E;
+  --light: #F8F9FA;
+  --gray: #E0E0E0;
+  --gray-dark: #757575;
+  --success: #4CAF50;
+  --error: #F44336;
+  --box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
   --text-light: #6c757d;
   --light-bg: #f8f9fa;
   --card-bg: #ffffff;

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'react-toastify';
@@ -18,8 +18,9 @@ import {
   Typography,
   Box,
   CircularProgress,
-  Fade,
-  Slide
+  Slide,
+  Container,
+  Grid
 } from '@mui/material';
 import {
   Person as PersonIcon,
@@ -35,6 +36,7 @@ import { motion } from 'framer-motion';
 import './CreateAccount.css';
 
 const CreateAccount = () => {
+  // State management
   const [formData, setFormData] = useState({
     username: '',
     email: '',
@@ -43,16 +45,20 @@ const CreateAccount = () => {
     role: 'user',
     showPassword: false
   });
+  
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [username, setUsername] = useState('');
   const [role, setRole] = useState('');
+  
   const navigate = useNavigate();
-  const toggleMenu = () => setIsMenuOpen((prev) => !prev);
+  
+  // Menu handlers
+  const toggleMenu = () => setIsMenuOpen(prev => !prev);
   const closeMenu = () => setIsMenuOpen(false);
-
+  
   // Get user info if authenticated
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -67,37 +73,45 @@ const CreateAccount = () => {
     }
   }, []);
 
+  // Animation mount effect
   useEffect(() => {
     setMounted(true);
     return () => setMounted(false);
   }, []);
 
+  // Form validation
   const validateForm = () => {
     const newErrors = {};
-    if (!formData.username) newErrors.username = 'Username is required';
+    if (!formData.username.trim()) newErrors.username = 'Username is required';
+    
     if (!formData.email) {
       newErrors.email = 'Email is required';
     } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-      newErrors.email = 'Email is invalid';
+      newErrors.email = 'Please enter a valid email address';
     }
+    
     if (!formData.password) {
       newErrors.password = 'Password is required';
     } else if (formData.password.length < 6) {
       newErrors.password = 'Password must be at least 6 characters';
     }
+    
     if (formData.phoneNumber && !/^\+?[0-9\s-()]{10,}$/.test(formData.phoneNumber)) {
       newErrors.phoneNumber = 'Please enter a valid phone number';
     }
+    
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
+  // Input change handler
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({
       ...prev,
       [name]: value
     }));
+    
     // Clear error when user types
     if (errors[name]) {
       setErrors(prev => ({
@@ -107,6 +121,7 @@ const CreateAccount = () => {
     }
   };
 
+  // Toggle password visibility
   const handleClickShowPassword = () => {
     setFormData(prev => ({
       ...prev,
@@ -114,6 +129,7 @@ const CreateAccount = () => {
     }));
   };
 
+  // Form submission handler
   const handleSubmit = async (e) => {
     e.preventDefault();
     
@@ -141,7 +157,7 @@ const CreateAccount = () => {
         userData.phoneNumber = formData.phoneNumber.trim();
       }
 
-      const response = await axios.post('http://localhost:3001/auth/admin/create', 
+      await axios.post('http://localhost:3001/auth/admin/create', 
         userData,
         {
           headers: {
@@ -151,6 +167,7 @@ const CreateAccount = () => {
         }
       );
       
+      // Show success message and reset form
       toast.success('Account created successfully!');
       setFormData({
         username: '',
@@ -162,39 +179,82 @@ const CreateAccount = () => {
       });
     } catch (error) {
       console.error('Error creating account:', error);
-      const errorMessage = error.response?.data?.message || 'Failed to create account';
+      const errorMessage = error.response?.data?.message || 'Failed to create account. Please try again.';
       toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
+  // Navigation handlers
   const handleBack = () => {
     setMounted(false);
     setTimeout(() => navigate('/'), 300);
   };
-
+  
   const handleLogout = () => {
     localStorage.clear();
     navigate('/login', { replace: true });
   };
 
+  // Redirect if not authenticated or not admin
   if (!isAuthenticated() || role !== 'admin') {
     navigate('/unauthorized');
     return null;
   }
 
   return (
-    <div className="dashboard-container">
+    <Box className="dashboard-container" sx={{ 
+      display: 'flex', 
+      minHeight: '100vh',
+      flexDirection: 'column',
+      '@media (min-width: 600px)': {
+        flexDirection: 'row'
+      }
+    }}>
       {/* Mobile Menu Toggle Button */}
-      <button className="menu-toggle" onClick={toggleMenu}>
+      <IconButton 
+        className="menu-toggle"
+        onClick={toggleMenu}
+        aria-label={isMenuOpen ? 'Close menu' : 'Open menu'}
+        sx={{
+          position: 'fixed',
+          top: 16,
+          left: 16,
+          zIndex: 1200,
+          display: { sm: 'none' },
+          backgroundColor: 'background.paper',
+          boxShadow: 1,
+          '&:hover': {
+            backgroundColor: 'rgba(0, 0, 0, 0.04)'
+          }
+        }}
+      >
         {isMenuOpen ? '✕' : '☰'}
-      </button>
+      </IconButton>
       
       {/* Overlay for mobile menu */}
-      <div 
-        className={`overlay ${isMenuOpen ? 'active' : ''}`} 
+      <Box 
+        className={`overlay ${isMenuOpen ? 'active' : ''}`}
         onClick={closeMenu}
+        aria-hidden="true"
+        sx={{
+          display: { sm: 'none' },
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          zIndex: 1199,
+          opacity: 0,
+          visibility: 'hidden',
+          transition: 'opacity 0.3s, visibility 0.3s',
+          '&.active': {
+            opacity: 1,
+            visibility: 'visible'
+          }
+        }}
       />
       
       {/* Sidebar */}
@@ -202,234 +262,349 @@ const CreateAccount = () => {
         username={username}
         role={role}
         isOpen={isMenuOpen}
-        onLogout={() => {
-          handleLogout();
-          closeMenu();
-        }}
+        onLogout={handleLogout}
       />
 
-      {/* Main Content */}
-      <div className="main-content">
-        <Box sx={{ position: 'relative', minHeight: '100vh', padding: '20px' }}>
-          <Fade in={mounted} timeout={500}>
-            <Box className="create-account-container">
-              <Slide direction="up" in={mounted} mountOnEnter unmountOnExit>
-                <Paper elevation={3} className="create-account-paper">
-                  <IconButton 
-                    onClick={handleBack}
+      <Box 
+        component="main"
+        sx={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          minHeight: '100vh',
+          marginLeft: { xs: 0, sm: '240px' },
+          transition: 'margin-left 0.3s',
+          padding: { xs: '16px', sm: '24px', md: '32px' },
+          width: '100%',
+          boxSizing: 'border-box',
+          backgroundColor: 'background.default',
+          overflowX: 'hidden',
+          '@media (min-width: 600px)': {
+            padding: { xs: '24px', md: '32px' }
+          }
+        }}
+      >
+        <Container 
+          maxWidth="md" 
+          sx={{ 
+            my: 'auto',
+            width: '100%',
+            padding: { xs: 0, sm: '0 16px' }
+          }}
+        >
+          <Slide direction="up" in={mounted} mountOnEnter unmountOnExit>
+            <Paper 
+              elevation={3}
+              sx={{
+                position: 'relative',
+                overflow: 'hidden',
+                borderRadius: 2,
+                p: { xs: 2, sm: 4 },
+                backgroundColor: 'background.paper'
+              }}
+              component={motion.div}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5 }}
+            >
+              {loading && (
+                <Box
+                  sx={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 10,
+                    borderRadius: 2
+                  }}
+                >
+                  <CircularProgress />
+                </Box>
+              )}
+              
+              <Box component="form" onSubmit={handleSubmit} noValidate>
+                <Box textAlign="center" mb={{ xs: 3, sm: 4 }}>
+                  <Typography 
+                    variant="h4" 
+                    component="h1" 
+                    gutterBottom
                     sx={{
-                      position: 'absolute',
-                      top: '20px',
-                      left: '20px',
-                      zIndex: 10,
-                      backgroundColor: 'white',
-                      color: 'var(--primary-color)',
-                      width: '48px',
-                      height: '48px',
-                      boxShadow: '0 2px 10px rgba(0,0,0,0.15)',
-                      '&:hover': {
-                        backgroundColor: 'white',
-                        transform: 'scale(1.1)'
-                      }
+                      fontSize: { xs: '1.75rem', sm: '2.125rem' },
+                      lineHeight: 1.2
                     }}
                   >
-                    <ArrowBackIcon sx={{ fontSize: '1.8rem' }} />
-                  </IconButton>
-
-                  <motion.div
-                    initial={{ opacity: 0, y: -20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.2 }}
-                    className="create-account-header"
+                    Create New Account
+                  </Typography>
+                  <Typography 
+                    variant="body1" 
+                    color="text.secondary"
+                    sx={{
+                      fontSize: { xs: '0.9rem', sm: '1rem' },
+                      lineHeight: 1.5
+                    }}
                   >
-              <PersonAddIcon className="header-icon" />
-              <Typography variant="h4" component="h1" className="header-title">
-                Create New Account
-              </Typography>
-              <Typography variant="body1" className="header-subtitle">
-                Fill in the details to create a new user account
-              </Typography>
-            </motion.div>
+                    Fill in the details below to create a new user account
+                  </Typography>
+                </Box>
 
-            <motion.form 
-              onSubmit={handleSubmit} 
-              className="create-account-form"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.3 }}
-            >
-              <motion.div
-                initial={{ x: -20, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                transition={{ delay: 0.4 }}
-              >
-                <TextField
-                  fullWidth
-                  label="Username"
-                  name="username"
-                  value={formData.username}
-                  onChange={handleChange}
-                  margin="normal"
-                  variant="outlined"
-                  required
-                  className="form-field"
-                  InputProps={{
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <PersonIcon className="input-icon" />
-                      </InputAdornment>
-                    ),
-                  }}
-                />
-              </motion.div>
+                <Grid container spacing={{ xs: 2, sm: 3 }}>
+                  <Grid item xs={12} md={6}>
+                    <TextField
+                      fullWidth
+                      label="Username"
+                      name="username"
+                      value={formData.username}
+                      onChange={handleChange}
+                      error={!!errors.username}
+                      helperText={errors.username || ' '}
+                      variant="outlined"
+                      margin="normal"
+                      size="small"
+                      InputProps={{
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <PersonIcon 
+                              fontSize="small"
+                              color={errors.username ? 'error' : 'action'} 
+                            />
+                          </InputAdornment>
+                        ),
+                      }}
+                      disabled={loading}
+                      sx={{
+                        '& .MuiOutlinedInput-root': {
+                          height: { xs: '48px', sm: '56px' }
+                        }
+                      }}
+                    />
 
-              <motion.div
-                initial={{ x: -20, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                transition={{ delay: 0.5 }}
-              >
-                <TextField
-                  margin="normal"
-                  required
-                  fullWidth
-                  name="email"
-                  label="Email"
-                  type="email"
-                  id="email"
-                  autoComplete="email"
-                  value={formData.email}
-                  onChange={handleChange}
-                  error={!!errors.email}
-                  helperText={errors.email}
-                  InputProps={{
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <EmailIcon />
-                      </InputAdornment>
-                    ),
-                  }}
-                />
-              </motion.div>
+                    <TextField
+                      fullWidth
+                      label="Email Address"
+                      name="email"
+                      type="email"
+                      value={formData.email}
+                      onChange={handleChange}
+                      error={!!errors.email}
+                      helperText={errors.email || ' '}
+                      variant="outlined"
+                      margin="normal"
+                      size="small"
+                      InputProps={{
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <EmailIcon 
+                              fontSize="small"
+                              color={errors.email ? 'error' : 'action'} 
+                            />
+                          </InputAdornment>
+                        ),
+                      }}
+                      disabled={loading}
+                      sx={{
+                        '& .MuiOutlinedInput-root': {
+                          height: { xs: '48px', sm: '56px' }
+                        }
+                      }}
+                    />
 
-              <motion.div
-                initial={{ x: -20, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                transition={{ delay: 0.6 }}
-              >
-                <TextField
-                  margin="normal"
-                  required
-                  fullWidth
-                  name="password"
-                  label="Password"
-                  type={formData.showPassword ? 'text' : 'password'}
-                  id="password"
-                  autoComplete="new-password"
-                  value={formData.password}
-                  onChange={handleChange}
-                  error={!!errors.password}
-                  helperText={errors.password || 'Minimum 6 characters'}
-                  InputProps={{
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <LockIcon />
-                      </InputAdornment>
-                    ),
-                    endAdornment: (
-                      <InputAdornment position="end">
-                        <IconButton
-                          aria-label="toggle password visibility"
-                          onClick={handleClickShowPassword}
-                          edge="end"
-                        >
-                          {formData.showPassword ? <VisibilityOff /> : <Visibility />}
-                        </IconButton>
-                      </InputAdornment>
-                    ),
-                  }}
-                />
-              </motion.div>
+                    <TextField
+                      fullWidth
+                      label="Password"
+                      name="password"
+                      type={formData.showPassword ? 'text' : 'password'}
+                      value={formData.password}
+                      onChange={handleChange}
+                      error={!!errors.password}
+                      helperText={errors.password || 'Minimum 6 characters'}
+                      variant="outlined"
+                      margin="normal"
+                      size="small"
+                      InputProps={{
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <LockIcon 
+                              fontSize="small"
+                              color={errors.password ? 'error' : 'action'} 
+                            />
+                          </InputAdornment>
+                        ),
+                        endAdornment: (
+                          <InputAdornment position="end">
+                            <IconButton
+                              aria-label="toggle password visibility"
+                              onClick={handleClickShowPassword}
+                              edge="end"
+                              size="small"
+                              sx={{
+                                padding: '8px',
+                                '&:hover': {
+                                  backgroundColor: 'transparent'
+                                }
+                              }}
+                            >
+                              {formData.showPassword ? 
+                                <VisibilityOff fontSize="small" /> : 
+                                <Visibility fontSize="small" />
+                              }
+                            </IconButton>
+                          </InputAdornment>
+                        ),
+                      }}
+                      disabled={loading}
+                      sx={{
+                        '& .MuiOutlinedInput-root': {
+                          height: { xs: '48px', sm: '56px' },
+                          '& fieldset': {
+                            borderColor: errors.password ? 'error.main' : 'rgba(0, 0, 0, 0.23)'
+                          },
+                          '&:hover fieldset': {
+                            borderColor: errors.password ? 'error.main' : 'rgba(0, 0, 0, 0.87)'
+                          }
+                        }
+                      }}
+                    />
+                  </Grid>
 
-              <motion.div
-                initial={{ x: -20, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                transition={{ delay: 0.7 }}
-              >
-                <TextField
-                  margin="normal"
-                  fullWidth
-                  id="phoneNumber"
-                  label="Phone Number (optional)"
-                  name="phoneNumber"
-                  autoComplete="tel"
-                  value={formData.phoneNumber}
-                  onChange={handleChange}
-                  error={!!errors.phoneNumber}
-                  helperText={errors.phoneNumber || 'Format: +1234567890'}
-                  placeholder="+1234567890"
-                  InputProps={{
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <PhoneIcon />
-                      </InputAdornment>
-                    ),
-                  }}
-                />
-              </motion.div>
+                  <Grid item xs={12} md={6}>
+                    <TextField
+                      fullWidth
+                      label="Phone Number (Optional)"
+                      name="phoneNumber"
+                      value={formData.phoneNumber}
+                      onChange={handleChange}
+                      error={!!errors.phoneNumber}
+                      helperText={errors.phoneNumber || ' '}
+                      variant="outlined"
+                      margin="normal"
+                      size="small"
+                      InputProps={{
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <PhoneIcon 
+                              fontSize="small"
+                              color={errors.phoneNumber ? 'error' : 'action'} 
+                            />
+                          </InputAdornment>
+                        ),
+                      }}
+                      disabled={loading}
+                      sx={{
+                        '& .MuiOutlinedInput-root': {
+                          height: { xs: '48px', sm: '56px' }
+                        }
+                      }}
+                    />
 
-              <motion.div
-                initial={{ x: -20, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                transition={{ delay: 0.8 }}
-              >
-                <FormControl fullWidth margin="normal">
-                  <InputLabel id="role-label">Role</InputLabel>
-                  <Select
-                    labelId="role-label"
-                    id="role"
-                    name="role"
-                    value={formData.role}
-                    label="Role"
-                    onChange={handleChange}
-                  >
-                    <MenuItem value="user">User</MenuItem>
-                    <MenuItem value="admin">Admin</MenuItem>
-                  </Select>
-                </FormControl>
-              </motion.div>
+                    <FormControl 
+                      fullWidth 
+                      variant="outlined" 
+                      sx={{ 
+                        mt: 2, 
+                        mb: 2,
+                        '& .MuiOutlinedInput-root': {
+                          height: { xs: '48px', sm: '56px' },
+                          '& fieldset': {
+                            borderColor: 'rgba(0, 0, 0, 0.23)'
+                          },
+                          '&:hover fieldset': {
+                            borderColor: 'rgba(0, 0, 0, 0.87)'
+                          }
+                        }
+                      }}
+                    >
+                      <InputLabel id="role-label" sx={{ 
+                        transform: 'translate(14px, 14px) scale(1)',
+                        '&.MuiInputLabel-shrink': {
+                          transform: 'translate(14px, -6px) scale(0.75)'
+                        }
+                      }}>
+                        Role
+                      </InputLabel>
+                      <Select
+                        labelId="role-label"
+                        name="role"
+                        value={formData.role}
+                        onChange={handleChange}
+                        label="Role"
+                        disabled={loading}
+                        size="small"
+                        sx={{
+                          '& .MuiSelect-select': {
+                            display: 'flex',
+                            alignItems: 'center',
+                            padding: { xs: '12.5px 14px', sm: '16.5px 14px' }
+                          }
+                        }}
+                      >
+                        <MenuItem value="user">User</MenuItem>
+                        <MenuItem value="admin">Admin</MenuItem>
+                      </Select>
+                    </FormControl>
 
-              <motion.div
-                initial={{ y: 20, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 0.9 }}
-                className="submit-container"
-              >
-                <Button
-                  type="submit"
-                  fullWidth
-                  variant="contained"
-                  color="primary"
-                  size="large"
-                  disabled={loading}
-                  className="submit-button"
-                  startIcon={loading ? null : <PersonAddIcon />}
-                >
-                  {loading ? (
-                    <CircularProgress size={24} color="inherit" />
-                  ) : (
-                    'Create Account'
-                  )}
-                </Button>
-              </motion.div>
-            </motion.form>
-          </Paper>
-        </Slide>
+                    <Box 
+                      sx={{
+                        mt: 3,
+                        '& button': {
+                          py: { xs: 1.25, sm: 1.5 },
+                          borderRadius: 2,
+                          textTransform: 'none',
+                          fontSize: { xs: '0.9375rem', sm: '1rem' },
+                          fontWeight: 600,
+                          width: '100%',
+                          height: { xs: '48px', sm: '56px' },
+                          '& .MuiButton-startIcon': {
+                            marginRight: { xs: '6px', sm: '8px' },
+                            '& > *:nth-of-type(1)': {
+                              fontSize: { xs: '18px', sm: '20px' }
+                            }
+                          }
+                        }
+                      }}
+                    >
+                      <Button
+                        type="submit"
+                        variant="contained"
+                        color="primary"
+                        disabled={loading}
+                        style={{marginTop: '1rem'}}
+                        startIcon={loading ? (
+                          <CircularProgress size={20} color="inherit" />
+                        ) : (
+                          <PersonAddIcon />
+                        )}
+                        sx={{
+                          background: 'linear-gradient(45deg, #1976d2 30%, #2196f3 90%)',
+                          '&:hover': {
+                            background: 'linear-gradient(45deg, #1565c0 30%, #1e88e5 90%)',
+                            boxShadow: '0 4px 8px rgba(25, 118, 210, 0.4)'
+                          },
+                          '&.Mui-disabled': {
+                            background: 'rgba(0, 0, 0, 0.12)',
+                            color: 'rgba(0, 0, 0, 0.26)'
+                          },
+                          '& .MuiCircularProgress-root': {
+                            color: 'inherit'
+                          }
+                        }}
+                      >
+                        {loading ? 'Creating...' : 'Create User'}
+                      </Button>
+                    </Box>
+                  </Grid>
+                </Grid>
+              </Box>
+            </Paper>
+          </Slide>
+        </Container>
       </Box>
-    </Fade>
-  </Box>
-</div>
-</div>
-);
+    </Box>
+  );
 };
 
 export default CreateAccount;

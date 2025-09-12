@@ -26,35 +26,57 @@ let AuthService = class AuthService {
         this.infobipOtpService = infobipOtpService;
     }
     async login(username, password) {
-        const user = await this.userService.findByUsername(username);
-        if (!user) {
-            console.log(`Login attempt with invalid username: ${username}`);
-            throw new common_1.UnauthorizedException('Invalid credentials');
+        console.log(`[AuthService] Login attempt for username: ${username}`);
+        try {
+            if (!username || !password) {
+                console.log('[AuthService] Missing username or password');
+                throw new common_1.UnauthorizedException('Username and password are required');
+            }
+            console.log(`[AuthService] Looking up user by username: ${username}`);
+            let user = await this.userService.findByUsername(username);
+            if (!user && username.includes('@')) {
+                console.log(`[AuthService] User not found by username, trying email: ${username}`);
+                user = await this.userService.findByEmail(username);
+            }
+            if (!user) {
+                console.log(`[AuthService] User not found: ${username}`);
+                throw new common_1.UnauthorizedException('Invalid username or password');
+            }
+            console.log(`[AuthService] Found user: ${user._id} (${user.username})`);
+            if (!user.password) {
+                console.log(`[AuthService] No password set for user: ${user._id}`);
+                throw new common_1.UnauthorizedException('No password set for this account. Please use password reset.');
+            }
+            console.log('[AuthService] Verifying password...');
+            const isPasswordValid = await bcrypt.compare(password, user.password);
+            console.log(`[AuthService] Password validation result: ${isPasswordValid}`);
+            if (!isPasswordValid) {
+                console.log(`[AuthService] Failed password attempt for user: ${user._id}`);
+                throw new common_1.UnauthorizedException('Invalid username or password');
+            }
+            const userData = {
+                userId: user._id.toString(),
+                username: user.username,
+                email: user.email || '',
+                phoneNumber: user.phoneNumber || '',
+                role: user.role || 'user'
+            };
+            const payload = {
+                sub: user._id.toString(),
+                username: user.username,
+                role: user.role || 'user'
+            };
+            console.log('Generating token with payload:', payload);
+            const token = this.jwtService.sign(payload);
+            return {
+                access_token: token,
+                ...userData
+            };
         }
-        if (!user.password) {
-            console.log(`No password set for username: ${username}`);
-            throw new common_1.UnauthorizedException('User has no password set. Use phone-based login.');
+        catch (error) {
+            console.error('Login error:', error);
+            throw error;
         }
-        const isPasswordValid = await bcrypt.compare(password, user.password);
-        if (!isPasswordValid) {
-            console.log(`Failed password attempt for username: ${username}`);
-            throw new common_1.UnauthorizedException('Invalid credentials');
-        }
-        const payload = {
-            phoneNumber: user.phoneNumber,
-            email: user.email || '',
-            sub: user._id.toString(),
-            username: user.username,
-            role: user.role,
-        };
-        console.log('Generating token with payload:', payload);
-        const token = this.jwtService.sign(payload);
-        return {
-            access_token: token,
-            username: user.username,
-            role: user.role,
-            userId: user._id.toString(),
-        };
     }
     async verifyPhoneLogin(phoneNumber, otp) {
         let formattedPhone;

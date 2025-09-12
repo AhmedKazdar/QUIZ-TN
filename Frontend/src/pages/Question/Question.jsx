@@ -34,7 +34,7 @@ import {
   Visibility as VisibilityIcon,
   Close as CloseIcon
 } from "@mui/icons-material";
-import SideBar from "../../components/SideBar/SideBar";
+import SideBar from "../../components/Sidebar/SideBar";
 import "./Question.css";
 
 const QuestionsTable = () => {
@@ -45,6 +45,7 @@ const QuestionsTable = () => {
     type: "multiple-choice",
   });
   const [openDialog, setOpenDialog] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [newQuestion, setNewQuestion] = useState({
     textequestion: "",
     type: "multiple-choice",
@@ -63,11 +64,12 @@ const QuestionsTable = () => {
   const formRef = useRef(null);
 
   useEffect(() => {
-    const user = JSON.parse(localStorage.getItem('user'));
-    if (user) {
-      setUsername(user.username || '');
-      setRole(user.role || '');
-    }
+    const name = localStorage.getItem('username');
+    const userRole = localStorage.getItem('role');
+    
+    if (name) setUsername(name);
+    if (userRole) setRole(userRole);
+    
     fetchQuestions();
   }, []);
 
@@ -95,7 +97,7 @@ const QuestionsTable = () => {
   const fetchQuestions = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get("http://localhost:3001/question/all", {
+      const response = await axios.get("http://localhost:3001/api/question/all", {
         headers: { Authorization: `Bearer ${token}` }
       });
       setQuestions(response.data.questions);
@@ -131,7 +133,7 @@ const QuestionsTable = () => {
     try {
       const token = localStorage.getItem('token');
       await axios.put(
-        `http://localhost:3001/question/update/${id}`,
+        `http://localhost:3001/api/question/update/${id}`,
         updatedQuestion,
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -168,7 +170,7 @@ const QuestionsTable = () => {
     try {
       const token = localStorage.getItem('token');
       await axios.post(
-        "http://localhost:3001/question/create", 
+        "http://localhost:3001/api/question/create", 
         newQuestion,
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -207,7 +209,7 @@ const QuestionsTable = () => {
     if (window.confirm("Are you sure you want to delete this question?")) {
       try {
         const token = localStorage.getItem('token');
-        await axios.delete(`http://localhost:3001/question/delete/${id}`, {
+        await axios.delete(`http://localhost:3001/api/question/delete/${id}`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         fetchQuestions();
@@ -242,6 +244,9 @@ const QuestionsTable = () => {
     setCurrentPage(value);
   };
 
+
+  
+
   return (
     <div className="dashboard-container">
       {/* Mobile Menu Toggle */}
@@ -259,8 +264,13 @@ const QuestionsTable = () => {
       <SideBar 
         username={username} 
         role={role} 
-        isOpen={isMenuOpen} 
-        onLogout={handleLogout} 
+        isOpen={isMenuOpen}
+        onLogout={() => {
+          localStorage.removeItem("token");
+          localStorage.removeItem("username");
+          localStorage.removeItem("role");
+          navigate("/login");
+        }}
       />
       
       <div className="main-content">

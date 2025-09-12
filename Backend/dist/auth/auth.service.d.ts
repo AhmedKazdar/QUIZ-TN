@@ -9,10 +9,12 @@ export declare class AuthService {
     private readonly infobipOtpService;
     constructor(userService: UserService, jwtService: JwtService, infobipOtpService: InfobipOtpService);
     login(username: string, password: string): Promise<{
-        access_token: string;
-        username: string;
-        role: string;
         userId: string;
+        username: string;
+        email: string;
+        phoneNumber: string;
+        role: string;
+        access_token: string;
     }>;
     verifyPhoneLogin(phoneNumber: string, otp: string): Promise<{
         access_token: string;
@@ -23,5 +25,10 @@ export declare class AuthService {
     createAdminUser(createUserDto: CreateUserDto): Promise<{
         user: UserDocument;
         token: string;
+        userId: string;
+        username: string;
+        role: string;
+        email: string;
+        phoneNumber: string;
     }>;
 }

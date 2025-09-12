@@ -56,10 +56,12 @@ let UserService = class UserService {
         }
     }
     async create(createUserDto) {
+        console.log('[UserService] Creating new user:', createUserDto.username);
         const existingUser = await this.userModel.findOne({
             username: createUserDto.username
         }).exec();
         if (existingUser) {
+            console.log(`[UserService] Username already exists: ${createUserDto.username}`);
             throw new common_1.ConflictException('Username already exists');
         }
         if (createUserDto.email) {
@@ -67,6 +69,7 @@ let UserService = class UserService {
                 email: createUserDto.email
             }).exec();
             if (emailUser) {
+                console.log(`[UserService] Email already exists: ${createUserDto.email}`);
                 throw new common_1.ConflictException('Email already exists');
             }
         }
@@ -75,32 +78,59 @@ let UserService = class UserService {
                 phoneNumber: createUserDto.phoneNumber
             }).exec();
             if (phoneUser) {
+                console.log(`[UserService] Phone number already exists: ${createUserDto.phoneNumber}`);
                 throw new common_1.ConflictException('Phone number already exists');
             }
         }
         if (!createUserDto.password) {
+            console.log('[UserService] Password is required');
             throw new common_1.BadRequestException('Password is required');
         }
-        const hashedPassword = await bcrypt.hash(createUserDto.password, 10);
-        const user = new this.userModel({
+        if (createUserDto.password.length < 6) {
+            console.log('[UserService] Password is too short');
+            throw new common_1.BadRequestException('Password must be at least 6 characters long');
+        }
+        console.log('[UserService] Hashing password...');
+        const saltRounds = 10;
+        const hashedPassword = await bcrypt.hash(createUserDto.password, saltRounds);
+        console.log('[UserService] Password hashed successfully');
+        const userData = {
             phoneNumber: createUserDto.phoneNumber,
             username: createUserDto.username,
             role: createUserDto.role || 'user',
             email: createUserDto.email,
             password: hashedPassword,
             lastActive: new Date(),
-        });
-        const savedUser = await user.save();
-        const payload = {
-            username: savedUser.username,
-            sub: savedUser._id.toString(),
-            role: savedUser.role,
-            email: savedUser.email || '',
-            phoneNumber: savedUser.phoneNumber || ''
         };
-        const token = this.jwtService.sign(payload);
-        console.log('User successfully created:', savedUser);
-        return { user: savedUser, token };
+        console.log('[UserService] Creating user with data:', {
+            ...userData,
+            password: '***'
+        });
+        const user = new this.userModel(userData);
+        try {
+            const savedUser = await user.save();
+            console.log('[UserService] User created successfully:', savedUser._id);
+            const payload = {
+                sub: savedUser._id.toString(),
+                username: savedUser.username,
+                role: savedUser.role || 'user'
+            };
+            console.log('[UserService] Generating JWT token with payload:', payload);
+            const token = this.jwtService.sign(payload);
+            return {
+                user: savedUser,
+                token,
+                userId: savedUser._id.toString(),
+                username: savedUser.username,
+                role: savedUser.role || 'user',
+                email: savedUser.email || '',
+                phoneNumber: savedUser.phoneNumber || ''
+            };
+        }
+        catch (error) {
+            console.error('[UserService] Error saving user:', error);
+            throw new common_1.BadRequestException('Failed to create user');
+        }
     }
     async initiateRegistration(createUserDto) {
         console.log('Initiate registration with:', createUserDto);
@@ -229,15 +259,29 @@ let UserService = class UserService {
     }
     async login(loginDto) {
         const { username, password } = loginDto;
-        const user = await this.userModel.findOne({ username }).exec();
+        console.log(`Login attempt for username: ${username}`);
+        const user = await this.userModel.findOne({
+            username: { $regex: new RegExp(`^${username}$`, 'i') }
+        }).exec();
+        const allUsers = await this.userModel.find({}).select('username').lean();
+        console.log('All users in database:', allUsers.map(u => u.username));
         if (!user) {
+            console.log(`User not found: ${username}`);
             throw new common_1.UnauthorizedException('Invalid username or password');
         }
+        console.log(`User found:`, {
+            id: user._id,
+            username: user.username,
+            hasPassword: !!user.password
+        });
         if (!user.password) {
             throw new common_1.UnauthorizedException('No password set for this account. Please use password reset.');
         }
+        console.log('Verifying password...');
         const isPasswordValid = await bcrypt.compare(password, user.password);
+        console.log(`Password validation result: ${isPasswordValid}`);
         if (!isPasswordValid) {
+            console.log('Password validation failed');
             throw new common_1.UnauthorizedException('Invalid username or password');
         }
         await this.updateLastActive(user._id.toString());

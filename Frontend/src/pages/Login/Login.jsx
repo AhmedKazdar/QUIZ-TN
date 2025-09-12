@@ -100,40 +100,83 @@ const LoginForm = () => {
     setError("");
 
     try {
-      const response = await axios.post("http://localhost:3001/users/login", {
-        username: formData.username,
+      console.log('Attempting login with username:', formData.username);
+      
+      const response = await axios.post("http://localhost:3001/api/auth/login", {
+        username: formData.username.trim(),
         password: formData.password,
       });
 
-      const { access_token, userId, role, username: responseUsername } = response.data;
+      console.log('Login response:', response.data);
+      
+      const { 
+        access_token, 
+        userId, 
+        role, 
+        username: responseUsername,
+        email,
+        phoneNumber 
+      } = response.data;
+
+      if (!access_token || !userId) {
+        throw new Error('Invalid response from server');
+      }
 
       // Store user data
       localStorage.setItem("token", access_token);
       localStorage.setItem("userId", userId);
-      localStorage.setItem("role", role);
+      localStorage.setItem("role", role || 'user');
       localStorage.setItem("username", responseUsername || formData.username);
+      localStorage.setItem("email", email || '');
+      localStorage.setItem("phoneNumber", phoneNumber || '');
       localStorage.setItem("isAuthenticated", "true");
 
+      console.log('User data stored, connecting socket...');
+      
       // Connect socket
       try {
-        socketService.connect();
+        await socketService.connect();
+        console.log('Socket connected successfully');
       } catch (socketError) {
         console.error("Socket connection error:", socketError);
+        // Continue with login even if socket fails
+        toast.warning("Connected, but real-time features may be limited");
       }
 
       setLoading(false);
       
       // Show success message
       toast.success("🎉 Login successful! Redirecting...");
+      console.log('Login successful, redirecting to /home');
 
       // Redirect after a short delay
       setTimeout(() => {
         navigate("/home", { replace: true });
-      }, 1500);
+      }, 1000);
       
     } catch (err) {
-      console.error("Login error:", err.response?.data || err.message);
-      const errorMessage = err.response?.data?.message || "Invalid username or password";
+      console.error("Login error:", {
+        message: err.message,
+        response: err.response?.data,
+        status: err.response?.status
+      });
+      
+      let errorMessage = "Login failed. Please try again.";
+      
+      if (err.response) {
+        // Handle HTTP errors
+        if (err.response.status === 401) {
+          errorMessage = "Invalid username or password";
+        } else if (err.response.status >= 500) {
+          errorMessage = "Server error. Please try again later.";
+        } else if (err.response.data?.message) {
+          errorMessage = err.response.data.message;
+        }
+      } else if (err.request) {
+        // The request was made but no response was received
+        errorMessage = "Unable to connect to the server. Please check your connection.";
+      }
+      
       showError(errorMessage);
       toast.error(`❌ ${errorMessage}`);
       setLoading(false);

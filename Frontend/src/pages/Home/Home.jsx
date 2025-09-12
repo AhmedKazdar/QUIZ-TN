@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import "./Home.css";
 import { isAuthenticated } from "../../utils/auth";
@@ -6,6 +6,13 @@ import axios from "axios";
 import { jwtDecode } from "jwt-decode";
 import io from "socket.io-client";
 import SideBar from "../../components/Sidebar/SideBar";
+import { format, parse } from 'date-fns';
+import { TimePicker } from '@mui/x-date-pickers/TimePicker';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import { TextField, Button, Box, Typography, List, ListItem, ListItemText, IconButton, Alert, Snackbar, CircularProgress } from '@mui/material';
+import { Add as AddIcon, Delete as DeleteIcon, Edit as EditIcon } from '@mui/icons-material';
+import { quizTimeService } from '../../services/quizTime.service';
 
 const Home = () => {
   const navigate = useNavigate();
@@ -18,9 +25,94 @@ const Home = () => {
   const [onlineUsers, setOnlineUsers] = useState([]);
   const [error, setError] = useState(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [quizTimes, setQuizTimes] = useState([]);
+  const [newTime, setNewTime] = useState(null);
+  const [editingTime, setEditingTime] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const socketRef = useRef(null);
-  const toggleMenu = () => setIsMenuOpen((prev) => !prev);
+  const toggleMenu = () => setIsMenuOpen(prev => !prev);
   const closeMenu = () => setIsMenuOpen(false);
+
+  const showSnackbar = (message, severity = 'success') => {
+    setSnackbar({ open: true, message, severity });
+  };
+
+  const fetchQuizTimes = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const times = await quizTimeService.getQuizTimes();
+      setQuizTimes(times);
+    } catch (error) {
+      console.error('Error fetching quiz times:', error);
+      showSnackbar('Failed to load quiz times', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  const handleAddTime = async () => {
+    if (!newTime) return;
+    
+    // Format the time as HH:mm
+    const timeString = format(newTime, 'HH:mm');
+    
+    try {
+      console.log('Adding quiz time:', timeString);
+      const newQuizTime = await quizTimeService.addQuizTime(timeString);
+      setQuizTimes([...quizTimes, newQuizTime]);
+      setNewTime(null);
+      showSnackbar('Quiz time added successfully');
+    } catch (error) {
+      console.error('Error in handleAddTime:', error);
+      if (error.response?.data?.message) {
+        showSnackbar(error.response.data.message, 'error');
+      } else {
+        showSnackbar(`Failed to add quiz time: ${error.message}`, 'error');
+      }
+    }
+  };
+
+  const handleDeleteTime = async (id) => {
+    try {
+      await quizTimeService.deleteQuizTime(id);
+      setQuizTimes(quizTimes.filter(time => time._id !== id));
+      showSnackbar('Quiz time removed', 'info');
+    } catch (error) {
+      showSnackbar('Failed to delete quiz time', 'error');
+    }
+  };
+
+  const handleEditTime = (time) => {
+    setEditingTime(time);
+    setNewTime(parse(time.time, 'HH:mm:ss', new Date()));
+  };
+
+  const handleUpdateTime = async () => {
+    if (!newTime || !editingTime) return;
+    
+    const timeString = format(newTime, 'HH:mm:ss');
+    
+    try {
+      const updatedTime = await quizTimeService.updateQuizTime(editingTime._id, { time: timeString });
+      setQuizTimes(quizTimes.map(time => 
+        time._id === editingTime._id ? updatedTime : time
+      ));
+      setEditingTime(null);
+      setNewTime(null);
+      showSnackbar('Quiz time updated successfully');
+    } catch (error) {
+      if (error.response?.data?.message) {
+        showSnackbar(error.response.data.message, 'error');
+      } else {
+        showSnackbar('Failed to update quiz time', 'error');
+      }
+    }
+  };
+
+  const handleCloseSnackbar = () => {
+    setSnackbar({ ...snackbar, open: false });
+  };
 
   useEffect(() => {
     console.log("Running Home useEffect");
@@ -29,6 +121,11 @@ const Home = () => {
       console.log("Not authenticated, redirecting to /login");
       navigate("/login", { replace: true });
       return;
+    }
+    
+    // Fetch quiz times when component mounts
+    if (role === 'admin') {
+      fetchQuizTimes();
     }
 
     const token = localStorage.getItem("token");
@@ -68,7 +165,7 @@ const Home = () => {
 
       // Fetch initial online users
       axios
-        .get("http://localhost:3001/users/online", {
+        .get("http://localhost:3001/api/users/online", {
           headers: { Authorization: `Bearer ${token}` },
         })
         .then((res) => {
@@ -142,63 +239,84 @@ const Home = () => {
         socketRef.current.disconnect();
       }
     };
-  }, [navigate, username, role]); // Added username, role to dependencies
+  }, [navigate, username, role, fetchQuizTimes]);
 
   useEffect(() => {
     if (selectedMode !== "online") return;
 
     const getNextQuizTime = () => {
       const now = new Date();
-      const times = [
-        new Date(now.getFullYear(), now.getMonth(), now.getDate(), 17, 15, 0),
-        new Date(now.getFullYear(), now.getMonth(), now.getDate(), 20, 0, 0),
-      ];
-      return (
-        times.find((t) => t > now) || new Date(times[0].getTime() + 86400000)
-      );
+      
+      // Convert quiz times to Date objects for today
+      const todayTimes = quizTimes
+        .filter(quizTime => quizTime.isActive !== false)
+        .map(quizTime => {
+          const [hours, minutes] = quizTime.time.split(':').map(Number);
+          return new Date(
+            now.getFullYear(),
+            now.getMonth(),
+            now.getDate(),
+            hours,
+            minutes,
+            0
+          );
+        });
+
+      // If no active quiz times, return null
+      if (todayTimes.length === 0) return null;
+
+      // Sort times and find the next one
+      todayTimes.sort((a, b) => a - b);
+      const nextTime = todayTimes.find(time => time > now) || 
+        new Date(todayTimes[0].getTime() + 24 * 60 * 60 * 1000); // If all passed, use first time tomorrow
+
+      return nextTime;
     };
 
-    let nextQuiz = getNextQuizTime();
+    let nextTime = getNextQuizTime();
+    if (!nextTime) {
+      setCountdown('No upcoming quizzes');
+      return;
+    }
 
-    const interval = setInterval(() => {
+    const updateCountdown = () => {
       const now = new Date();
-      const diff = nextQuiz - now;
+      let diff = nextTime - now;
 
-      if (diff <= 0 && diff > -60000) {
-        setCountdown("✅ Quiz is active now!");
-        clearInterval(interval);
-        navigate("/quiz", { state: { mode: "online" }, replace: true });
-      } else if (diff <= -60000) {
-        nextQuiz = getNextQuizTime();
-      } else {
-        const hours = String(Math.floor(diff / 3600000)).padStart(2, "0");
-        const minutes = String(Math.floor((diff % 3600000) / 60000)).padStart(
-          2,
-          "0"
-        );
-        const seconds = String(Math.floor((diff % 60000) / 1000)).padStart(
-          2,
-          "0"
-        );
-        setCountdown(`⏳ Next quiz starts in: ${hours}:${minutes}:${seconds}`);
+      // If the time has passed, get the next quiz time
+      if (diff <= 0) {
+        nextTime = getNextQuizTime();
+        if (!nextTime) {
+          setCountdown('No upcoming quizzes');
+          return;
+        }
+        diff = nextTime - now;
       }
-    }, 1000);
+
+      const hours = Math.floor(diff / (1000 * 60 * 60));
+      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+      setCountdown(`${hours}h ${minutes}m ${seconds}s`);
+    };
+
+    const interval = setInterval(updateCountdown, 1000);
 
     return () => clearInterval(interval);
-  }, [selectedMode, navigate]);
+  }, [selectedMode, quizTimes, navigate]);
 
-  const handleLogout = () => {
-    console.log("Logging out");
-    localStorage.clear();
-    setUserName(null);
-    setRole(null);
-    navigate("/login", { replace: true });
-  };
-
-  const startPracticeMode = () => {
+  const startPracticeMode = useCallback(() => {
     console.log("Starting practice mode");
     navigate("/quiz", { state: { mode: "practice" }, replace: true });
-  };
+  }, [navigate]);
+
+  const handleLogout = useCallback(() => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('username');
+    localStorage.removeItem('role');
+    setRole(null);
+    navigate("/login", { replace: true });
+  }, [navigate]);
 
   console.log("Rendering Home component");
 
@@ -266,9 +384,100 @@ const Home = () => {
                 </div>
               </div>
 
+              {role === 'admin' && (
+                <div className="card">
+                  <h3>Quiz Schedule</h3>
+                  <LocalizationProvider dateAdapter={AdapterDateFns}>
+                    <Box sx={{ mb: 2, display: 'flex', gap: 1, alignItems: 'center' }}>
+                      <TimePicker
+                        label="New quiz time"
+                        value={newTime}
+                        onChange={(newValue) => setNewTime(newValue)}
+                        renderInput={(params) => <TextField {...params} size="small" />}
+                      />
+                      <Button
+                        variant="contained"
+                        color="primary"
+                        onClick={editingTime ? handleUpdateTime : handleAddTime}
+                        startIcon={<AddIcon />}
+                        style={{width: '100px',height: '55px',marginBottom:'25px'}}
+                        disabled={!newTime}
+                        sx={{ mb: 2, display: 'flex', gap: 1, alignItems: 'center' }}
+                      >
+                        {editingTime ? 'Update' : 'Add'}
+                      </Button>
+                      {editingTime && (
+                        <Button
+                          variant="outlined"
+                          onClick={() => {
+                            setEditingTime(null);
+                            setNewTime(null);
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                      )}
+                    </Box>
+                  </LocalizationProvider>
+                  
+                  {isLoading ? (
+                    <Box display="flex" justifyContent="center" p={2}>
+                      <CircularProgress size={24} />
+                    </Box>
+                  ) : (
+                    <List dense>
+                      {quizTimes.length > 0 ? (
+                        quizTimes.map((quizTime) => (
+                          <ListItem
+                            key={quizTime._id}
+                            secondaryAction={
+                              <>
+                                <IconButton 
+                                  edge="end" 
+                                  aria-label="edit"
+                                  onClick={() => handleEditTime(quizTime)}
+                                  size="small"
+                                  sx={{ mr: 1 }}
+                                >
+                                  <EditIcon fontSize="small" />
+                                </IconButton>
+                                <IconButton 
+                                  edge="end" 
+                                  aria-label="delete"
+                                  onClick={() => handleDeleteTime(quizTime._id)}
+                                  size="small"
+                                >
+                                  <DeleteIcon fontSize="small" />
+                                </IconButton>
+                              </>
+                            }
+                          >
+                            <ListItemText
+                              primary={new Date(`2000-01-01T${quizTime.time}`).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              secondary={!quizTime.isActive ? 'Inactive' : ''}
+                              style={{color:"initial"}}
+                            />
+                          </ListItem>
+                        ))
+                      ) : (
+                        <Typography variant="body2" color="text.secondary" sx={{ pl: 2, py: 2 }}>
+                          No quiz times scheduled
+                        </Typography>
+                      )}
+                    </List>
+                  )}
+                  
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+                    Next quiz: {quizTimes.length > 0 ? 
+                      new Date(`2000-01-01T${quizTimes[0].time}`).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 
+                      'Not scheduled'}
+                  </Typography>
+                </div>
+              )}
+
               <div className="card">
                 <h3>Recent Activity</h3>
-                <p>No recent activity</p>
+                <p style={{color:"initial"}}>No recent activity</p>
               </div>
             </div>
           ) : (
@@ -359,6 +568,22 @@ const Home = () => {
           )}
         </div>
       </div>
+      
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={handleCloseSnackbar}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert 
+          onClose={handleCloseSnackbar} 
+          severity={snackbar.severity}
+          variant="filled"
+          sx={{ width: '100%' }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </div>
   );
 };

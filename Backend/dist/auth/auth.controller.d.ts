@@ -7,13 +7,20 @@ export declare class AuthController {
         username: string;
         password: string;
     }): Promise<{
-        access_token: string;
-        username: string;
-        role: string;
         userId: string;
+        username: string;
+        email: string;
+        phoneNumber: string;
+        role: string;
+        access_token: string;
     }>;
     createAdminUser(createUserDto: CreateUserDto): Promise<{
         user: import("../user/user.schema").UserDocument;
         token: string;
+        userId: string;
+        username: string;
+        role: string;
+        email: string;
+        phoneNumber: string;
     }>;
 }

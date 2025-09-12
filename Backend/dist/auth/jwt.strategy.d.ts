@@ -7,7 +7,8 @@ export declare class JwtStrategy extends JwtStrategy_base {
     validate(payload: any): Promise<{
         userId: string;
         username: string;
-        email: string | null | undefined;
+        email: string;
+        phoneNumber: string;
         role: string;
         sub: string;
     }>;

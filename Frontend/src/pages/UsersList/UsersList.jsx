@@ -12,35 +12,20 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableContainer,
   TableHead,
   TableRow,
   TablePagination,
   IconButton,
-  Chip,
   CircularProgress,
   Button,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
-  TextField,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
   Tooltip,
   Avatar,
 } from '@mui/material';
-import {
-  Edit as EditIcon,
-  Delete as DeleteIcon,
-  Person as PersonIcon,
-  Add as AddIcon,
-  ArrowBack as ArrowBackIcon,
-  CheckCircle as CheckCircleIcon,
-  Cancel as CancelIcon,
-} from '@mui/icons-material';
+import { Delete as DeleteIcon, Person as PersonIcon, Add as AddIcon } from '@mui/icons-material';
 import { format } from 'date-fns';
 import './UsersList.css';
 
@@ -82,7 +67,7 @@ const UsersList = () => {
         throw new Error('Authentication required');
       }
 
-      const response = await axios.get('http://localhost:3001/users/all', {
+      const response = await axios.get('http://localhost:3001/api/users/all', {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -111,14 +96,14 @@ const UsersList = () => {
   const handleDeleteConfirm = async () => {
     try {
       const token = localStorage.getItem('token');
-      await axios.delete(`http://localhost:3001/user/${selectedUserId}`, {
+      await axios.delete(`http://localhost:3001/api/users/${selectedUserId}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       });
       
       toast.success('User deleted successfully');
-      fetchUsers();
+      fetchUsers(); // Refresh the users list
     } catch (error) {
       console.error('Error deleting user:', error);
       const errorMessage = error.response?.data?.message || 'Failed to delete user';
@@ -198,74 +183,45 @@ const UsersList = () => {
           </Box>
           
           <Paper elevation={0} className="table-container">
-          <Table stickyHeader>
-            <TableHead>
-              <TableRow>
-                <TableCell>User</TableCell>
-                <TableCell>Email</TableCell>
-                <TableCell>Phone</TableCell>
-                <TableCell>Role</TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell>Last Active</TableCell>
-                <TableCell>Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {users
-                .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                .map((user) => (
-                  <TableRow key={user.id} hover>
-                    <TableCell>
-                      <Box display="flex" alignItems="center" gap={2}>
-                        <Avatar>
-                          <PersonIcon />
-                        </Avatar>
-                        <Typography variant="body1">
-                          {user.username}
-                        </Typography>
-                      </Box>
+            <Table stickyHeader>
+              <TableHead>
+                <TableRow>
+                  <TableCell>User</TableCell>
+                  <TableCell>Email</TableCell>
+                  <TableCell>Role</TableCell>
+                  <TableCell>Actions</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={4} align="center">
+                      <CircularProgress />
                     </TableCell>
-                    <TableCell>{user.email}</TableCell>
-                    <TableCell>{user.phoneNumber || '-'}</TableCell>
-                    <TableCell>
-                      <Chip 
-                        label={user.role} 
-                        color={user.role === 'admin' ? 'primary' : 'default'}
-                        size="small"
-                        variant="outlined"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Box display="flex" alignItems="center" gap={1}>
-                        {user.isActive ? (
-                          <>
-                            <CheckCircleIcon color="success" fontSize="small" />
-                            <Typography>Active</Typography>
-                          </>
-                        ) : (
-                          <>
-                            <CancelIcon color="disabled" fontSize="small" />
-                            <Typography color="textSecondary">Inactive</Typography>
-                          </>
-                        )}
-                      </Box>
-                    </TableCell>
-                    <TableCell>
-                      {user.lastActive 
-                        ? format(new Date(user.lastActive), 'PPpp')
-                        : 'Never'}
-                    </TableCell>
-                    <TableCell align="center">
-                      <Box display="flex" justifyContent="center" gap={1}>
-                        <Tooltip title="Edit User">
-                          <IconButton
-                            size="small"
-                            color="primary"
-                            onClick={() => navigate(`/admin/edit-user/${user.id}`)}
-                          >
-                            <EditIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
+                  </TableRow>
+                ) : users.length > 0 ? (
+                  users.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((user) => (
+                    <TableRow key={user.id} hover>
+                      <TableCell>
+                        <Box display="flex" alignItems="center" gap={2}>
+                          <Avatar>
+                            <PersonIcon />
+                          </Avatar>
+                          <Typography variant="body1">
+                            {user.username}
+                          </Typography>
+                        </Box>
+                      </TableCell>
+                      <TableCell>{user.email}</TableCell>
+                      <TableCell>
+                        <span style={{ 
+                          color: user.role === 'admin' ? '#1976d2' : 'inherit',
+                          fontWeight: user.role === 'admin' ? 'bold' : 'normal'
+                        }}>
+                          {user.role}
+                        </span>
+                      </TableCell>
+                      <TableCell>
                         <Tooltip title="Delete User">
                           <IconButton
                             size="small"
@@ -276,44 +232,60 @@ const UsersList = () => {
                             <DeleteIcon fontSize="small" />
                           </IconButton>
                         </Tooltip>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={4} align="center">
+                      <Box textAlign="center" py={4}>
+                        <PersonIcon sx={{ fontSize: 48, color: 'text.disabled', mb: 1 }} />
+                        <Typography variant="subtitle1" color="text.secondary">
+                          No users found
+                        </Typography>
+                        <Button 
+                          variant="text" 
+                          color="primary" 
+                          onClick={() => navigate('/admin/create-account')}
+                          sx={{ mt: 1 }}
+                        >
+                          Add your first user
+                        </Button>
                       </Box>
                     </TableCell>
                   </TableRow>
-                ))}
-              {emptyRows > 0 && (
-                <TableRow style={{ height: 53 * emptyRows }}>
-                  <TableCell colSpan={7} />
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </Paper>
-        
-        {users.length > 0 && (
-          <TablePagination
-            rowsPerPageOptions={[5, 10, 25]}
-            component="div"
-            count={users.length}
-            rowsPerPage={rowsPerPage}
-            page={page}
-            onPageChange={handleChangePage}
-            onRowsPerPageChange={handleChangeRowsPerPage}
-            sx={{
-              '& .MuiTablePagination-toolbar': {
-                paddingLeft: 0,
-                paddingRight: 1,
-              },
-              '& .MuiTablePagination-selectLabel, & .MuiTablePagination-displayedRows': {
-                marginBottom: 0,
-              },
-              '& .MuiInputBase-root': {
-                marginRight: 2,
-              }
-            }}
-          />
-        )}
-      </Box>
-    </div>
+                )}
+              </TableBody>
+            </Table>
+            
+            {users.length > 0 && (
+              <TablePagination
+                rowsPerPageOptions={[5, 10, 25]}
+                component="div"
+                count={users.length}
+                rowsPerPage={rowsPerPage}
+                page={page}
+                onPageChange={handleChangePage}
+                onRowsPerPageChange={handleChangeRowsPerPage}
+                sx={{
+                  '& .MuiTablePagination-toolbar': {
+                    paddingLeft: 2,
+                    paddingRight: 1,
+                  },
+                  '& .MuiTablePagination-selectLabel, & .MuiTablePagination-displayedRows': {
+                    marginBottom: 0,
+                  },
+                  '& .MuiInputBase-root': {
+                    marginRight: 2,
+                  },
+                  mt: 2,
+                  borderTop: '1px solid rgba(224, 224, 224, 1)'
+                }}
+              />
+            )}
+          </Paper>
+        </Box>
+      </div>
 
       {/* Delete Confirmation Dialog */}
       <Dialog

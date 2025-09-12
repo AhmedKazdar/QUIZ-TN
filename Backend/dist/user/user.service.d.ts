@@ -15,6 +15,11 @@ export declare class UserService {
     create(createUserDto: CreateUserDto): Promise<{
         user: UserDocument;
         token: string;
+        userId: string;
+        username: string;
+        role: string;
+        email: string;
+        phoneNumber: string;
     }>;
     initiateRegistration(createUserDto: CreateUserDto): Promise<void>;
     completeRegistration(createUserDto: CreateUserDto, otp: string): Promise<User>;

@@ -41,6 +41,7 @@ export declare class UserController {
         role: string;
         userId: string;
     }>;
+    getCurrentUser(req: any): Promise<any>;
     updateUser(id: string, updateUserDto: CreateUserDto): Promise<{
         message: string;
         user: any;
@@ -64,7 +65,13 @@ export declare class UserController {
         lastActive: Date;
         createdAt: Date;
     }[]>;
-    deleteUser(id: string): Promise<{
+    remove(id: string): Promise<{
+        message: string;
+    }>;
+    resetPassword(resetPasswordDto: {
+        username: string;
+        newPassword: string;
+    }): Promise<{
         message: string;
     }>;
 }

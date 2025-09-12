@@ -7,8 +7,11 @@ import {
   DialogContent,
   DialogTitle,
   LinearProgress,
+  Box,
 } from "@mui/material";
 import { useNavigate, useLocation } from "react-router-dom";
+import SideBar from "../../components/Sidebar/SideBar";
+import { isAuthenticated } from "../../utils/auth";
 import "./QuizGame.css";
 
 const QuizGame = () => {
@@ -27,6 +30,9 @@ const QuizGame = () => {
   const [isRestarted, setIsRestarted] = useState(false); // Track restart
   const navigate = useNavigate();
   const location = useLocation();
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [username, setUsername] = useState("");
+  const [role, setRole] = useState("");
 
   const quizMode = location.state?.mode || "practice";
   const quizSessionId = `quiz_${new Date().getTime()}_${Math.random()
@@ -34,11 +40,23 @@ const QuizGame = () => {
     .slice(2)}`; // Unique session ID
 
   useEffect(() => {
+    // Check authentication
+    if (!isAuthenticated()) {
+      navigate("/login", { replace: true });
+      return;
+    }
+
+    // Get user data from local storage
+    const name = localStorage.getItem("username");
+    const userRole = localStorage.getItem("role");
+    if (name) setUsername(name);
+    if (userRole) setRole(userRole);
+
     const fetchData = async () => {
       try {
         const [questionsRes, responsesRes] = await Promise.all([
-          axios.get("http://localhost:3001/question/all"),
-          axios.get("http://localhost:3001/response"),
+          axios.get("http://localhost:3001/api/question/all"),
+          axios.get("http://localhost:3001/api/response"),
         ]);
 
         const allQuestions = questionsRes.data.questions;
@@ -160,7 +178,7 @@ const QuizGame = () => {
     try {
       // Fetch existing responses
       const existingResponses = await axios.get(
-        `http://localhost:3001/response?userId=${userId}`
+        `http://localhost:3001/api/response?userId=${userId}`
       );
       console.log("Existing responses:", existingResponses.data);
 
@@ -173,7 +191,7 @@ const QuizGame = () => {
         console.log("Quiz restarted, skipping response submission");
         // Skip submission, only fetch score
         const scoreResponse = await axios.post(
-          `http://localhost:3001/score/calculate/${userId}`
+          `http://localhost:3001/api/score/calculate/${userId}`
         );
         console.log("Score fetched successfully:", scoreResponse.data);
         if (scoreResponse.data?.score !== undefined) {
@@ -193,7 +211,7 @@ const QuizGame = () => {
       if (newAnswers.length === 0) {
         console.log("No new answers to submit, fetching score only");
         const scoreResponse = await axios.post(
-          `http://localhost:3001/score/calculate/${userId}`
+          `http://localhost:3001/api/score/calculate/${userId}`
         );
         console.log("Score fetched successfully:", scoreResponse.data);
         if (scoreResponse.data?.score !== undefined) {
@@ -214,7 +232,7 @@ const QuizGame = () => {
 
       console.log("Submitting responses:", formattedAnswers);
       const response = await axios.post(
-        "http://localhost:3001/response/submit",
+        "http://localhost:3001/api/response/submit",
         formattedAnswers
       );
       console.log("Responses submitted successfully:", response.data);
@@ -228,7 +246,7 @@ const QuizGame = () => {
 
       // Fetch score
       const scoreResponse = await axios.post(
-        `http://localhost:3001/score/calculate/${userId}`
+        `http://localhost:3001/api/score/calculate/${userId}`
       );
       console.log("Score saved successfully:", scoreResponse.data);
       if (scoreResponse.data?.score !== undefined) {
@@ -268,15 +286,64 @@ const QuizGame = () => {
 
   const currentQuestion = questions[currentQuestionIndex];
 
+  const handleLogout = () => {
+    localStorage.clear();
+    navigate("/login", { replace: true });
+  };
+
   return (
-    <div className="quiz-page">
-      <div className="quiz-container">
-        <div className="quiz-content">
-          {currentQuestion ? (
-            <div>
-              <Typography variant="h4" gutterBottom className="question-text">
-                {`Question ${currentQuestionIndex + 1}: ${
-                  currentQuestion.textequestion
+    <Box sx={{ display: 'flex', minHeight: '100vh' }}>
+      {/* Mobile Menu Toggle Button */}
+      <button 
+        className="menu-toggle" 
+        onClick={() => setIsMenuOpen(!isMenuOpen)}
+        style={{
+          position: 'fixed',
+          top: '10px',
+          left: '10px',
+          zIndex: 1200,
+          background: 'none',
+          border: 'none',
+          fontSize: '24px',
+          cursor: 'pointer',
+          display: { xs: 'block', md: 'none' },
+          color: '#4361ee'
+        }}
+      >
+        {isMenuOpen ? '✕' : '☰'}
+      </button>
+      
+      {/* Sidebar */}
+      <SideBar 
+        username={username}
+        role={role}
+        isOpen={isMenuOpen}
+        onLogout={handleLogout}
+      />
+
+      {/* Main Content */}
+      <Box 
+        component="main" 
+        sx={{ 
+          flexGrow: 1, 
+          p: 3,
+          width: { sm: `calc(100% - 250px)` },
+          ml: { sm: '250px' },
+          mt: { xs: '50px', sm: 0 }
+        }}
+      >
+        <div className="quiz-container">
+          {error && (
+            <Typography color="error" gutterBottom>
+              {error}
+            </Typography>
+          )}
+
+          {questions.length > 0 && currentQuestion ? (
+            <div className="question-container">
+              <Typography variant="h5" gutterBottom>
+                {`${currentQuestionIndex + 1}. ${
+                  currentQuestion.text || currentQuestion.textequestion || 'No question text available'
                 }`}
               </Typography>
 
@@ -387,8 +454,8 @@ const QuizGame = () => {
             </DialogContent>
           </Dialog>
         </div>
-      </div>
-    </div>
+      </Box>
+    </Box>
   );
 };
 

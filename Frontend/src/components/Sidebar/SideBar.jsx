@@ -1,16 +1,18 @@
 import React from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { FaHome, FaQuestionCircle, FaClipboardList, FaSignOutAlt, FaUserPlus, FaUsers } from 'react-icons/fa';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { FaHome, FaQuestionCircle, FaClipboardList, FaSignOutAlt, FaUserPlus, FaUsers, FaUser, FaCog } from 'react-icons/fa';
 import './SideBar.css';
 
 const SideBar = ({ username, role, isOpen = false, onLogout }) => {
   const location = useLocation();
+  const navigate = useNavigate();
   const isActive = (path) => location.pathname === path ? 'active' : '';
 
   const menuItems = [
     { path: '/home', icon: <FaHome />, label: 'Home' },
     { path: '/questions', icon: <FaQuestionCircle />, label: 'Questions' },
-    { path: '/responses', icon: <FaClipboardList />, label: 'Responses' }
+    { path: '/responses', icon: <FaClipboardList />, label: 'Responses' },
+    { path: '/profile', icon: <FaUser />, label: 'My Profile' }
   ];
 
   const adminItems = [
@@ -21,15 +23,20 @@ const SideBar = ({ username, role, isOpen = false, onLogout }) => {
   return (
     <div className={`sidebar ${isOpen ? 'active' : ''}`}>
       <div className="sidebar-header">
-        <h2>Quiz App</h2>
+        <h2>Quiz Dashboard</h2>
       </div>
       {username && (
-        <div className="sidebar-user">
+        <div 
+          className="sidebar-user" 
+          onClick={() => navigate('/profile')}
+          style={{ cursor: 'pointer' }}
+        >
           <div className="user-avatar">{username?.charAt(0).toUpperCase()}</div>
-          <div className="user-details">
-            <span className="username" style={{color: 'black'}}>{username}</span>
+          <div className="user-details" >
+            <span className="username">{username}</span>
             {role && <span className="user-role">{role}</span>}
           </div>
+        {/*   <FaCog className="user-settings-icon" /> */}
         </div>
       )}
       <nav className="sidebar-nav">

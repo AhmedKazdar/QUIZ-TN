@@ -1,80 +1,298 @@
-/* Ensure the body and html fill the viewport */
-html,
+/* Modern Gaming Theme Styles */
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=Orbitron:wght@700&display=swap');
+
+:root {
+  --primary: #6C63FF;
+  --secondary: #4A45B1;
+  --accent: #FF6B6B;
+  --dark: #1A1A2E;
+  --darker: #16213E;
+  --light: #F8F9FA;
+  --success: #4CAF50;
+  --warning: #FFC107;
+  --danger: #F44336;
+}
+
+/* Global Reset */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* Body Styling */
 body {
   margin: 0;
   padding: 0;
-  height: 100%;
+  min-height: 100vh;
+  background: linear-gradient(135deg, var(--darker), var(--dark));
+  color: var(--light);
+  font-family: 'Poppins', sans-serif;
+  overflow-x: hidden;
 }
 
-/* Main container takes full height of the page */
-.quiz-page {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-}
-
-/* The container for the quiz content, which should grow and take available space */
+/* Main Container */
 .quiz-container {
-  flex: 1; /* This makes the container grow to fill the available space */
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 2rem;
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  overflow: hidden; /* Prevent scrolling within this container */
 }
 
-/* Make sure the footer (RandomImage) is pushed to the bottom */
-.quiz-footer {
-  margin-top: auto;
-  text-align: center;
-  padding: 20px 0;
-  background: #f4f4f4;
+/* Question Container */
+.question-container {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  border-radius: 20px;
+  padding: 2rem;
+  margin: 1rem 0;
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  transform: translateY(0);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
 }
 
-/* Ensure quiz content can scroll if needed */
-.quiz-content {
-  flex: 1;
-  overflow-y: auto; /* Allows scrolling if content is too tall */
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  text-align: center;
+.question-container:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 12px 40px 0 rgba(31, 38, 135, 0.45);
 }
 
-/* Style for the question text */
+/* Question Text */
 .question-text {
-  margin-bottom: 20px;
   font-size: 1.5rem;
+  margin-bottom: 1.5rem;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
-/* Style for the response buttons */
-.response-button {
-  margin: 10px 0;
-}
-
-/* Style for the progress bar */
+/* Progress Bar */
 .progress-bar {
-  margin-bottom: 20px;
+  height: 10px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 5px;
+  margin: 1.5rem 0;
+  overflow: hidden;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
 }
 
-/* Next and Finish buttons */
-.quiz-container .next-btn {
-  margin-top: 20px;
-  margin-bottom: 10px; /* Adds 10px space below the Next Question button */
+.progress-bar > div {
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary), var(--accent));
+  border-radius: 5px;
+  transition: width 0.3s ease;
 }
 
-.quiz-container .finish-btn {
-  margin-top: 20px;
-  margin-bottom: 10px; /* Adds 10px space below the Next Question button */
+/* Response Buttons */
+.responses-container {
+  display: grid;
+  gap: 1rem;
+  margin: 1.5rem 0;
 }
 
-.dialog-title,
-.dialog-content {
-  text-align: center;
+.response-button {
+  background: rgba(255, 255, 255, 0.1);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  padding: 1rem 1.5rem;
+  border-radius: 12px;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-align: left;
+  position: relative;
+  overflow: hidden;
+  backdrop-filter: blur(5px);
 }
 
-/* Style for restart and home buttons */
+.response-button:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: translateY(-2px);
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+}
+
+.response-button:active {
+  transform: translateY(0);
+}
+
+.response-button.correct {
+  background: rgba(76, 175, 80, 0.3);
+  border-color: var(--success);
+}
+
+.response-button.incorrect {
+  background: rgba(244, 67, 54, 0.3);
+  border-color: var(--danger);
+}
+
+/* Action Buttons */
+.quiz-actions {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+.next-btn,
+.finish-btn,
 .restart-btn,
 .home-btn {
-  margin: 10px;
+  padding: 0.8rem 2rem;
+  border: none;
+  border-radius: 50px;
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  position: relative;
+  overflow: hidden;
+  z-index: 1;
+}
+
+.next-btn {
+  background: linear-gradient(45deg, var(--primary), var(--secondary));
+  color: white;
+}
+
+.finish-btn {
+  background: linear-gradient(45deg, var(--accent), #FF8E53);
+  color: white;
+}
+
+.restart-btn {
+  background: linear-gradient(45deg, var(--warning), #FF9800);
+  color: #000;
+}
+
+.home-btn {
+  background: transparent;
+  border: 2px solid var(--light);
+  color: var(--light);
+}
+
+.next-btn:hover,
+.finish-btn:hover,
+.restart-btn:hover,
+.home-btn:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+}
+
+.next-btn:active,
+.finish-btn:active,
+.restart-btn:active,
+.home-btn:active {
+  transform: translateY(0);
+}
+
+/* Score Display */
+.score-display {
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin: 1rem 0;
+  color: var(--light);
+  text-align: center;
+}
+
+/* Dialog Styles */
+.dialog-title {
+  background: linear-gradient(45deg, var(--primary), var(--secondary));
+  color: white !important;
+  padding: 1.5rem !important;
+  text-align: center;
+  font-family: 'Orbitron', sans-serif;
+  letter-spacing: 1px;
+}
+
+.dialog-content {
+  background: var(--darker);
+  color: var(--light);
+  padding: 2rem !important;
+  text-align: center;
+}
+
+/* Animation Keyframes */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .quiz-container {
+    padding: 1rem;
+  }
+  
+  .question-text {
+    font-size: 1.2rem;
+  }
+  
+  .response-button {
+    padding: 0.8rem 1rem;
+    font-size: 0.9rem;
+  }
+  
+  .quiz-actions {
+    flex-direction: column;
+    gap: 0.8rem;
+  }
+  
+  .next-btn,
+  .finish-btn,
+  .restart-btn,
+  .home-btn {
+    width: 100%;
+    padding: 0.8rem;
+  }
+}
+
+/* Game Elements */
+.quiz-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 15px;
+  backdrop-filter: blur(5px);
+}
+
+.timer {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 1.5rem;
+  color: #FFD700;
+  text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+}
+
+.score {
+  font-weight: 700;
+  font-size: 1.2rem;
+  background: linear-gradient(45deg, var(--primary), var(--accent));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Particle Background */
+.particles {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -1;
+  pointer-events: none;
 }

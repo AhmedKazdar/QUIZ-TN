@@ -18,20 +18,39 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
   async validate(payload: any) {
     console.log('JwtStrategy - Validating payload:', payload);
-    const user: UserDocument | null = await this.userService.findById(
-      payload.sub,
-    );
-    if (!user) {
-      console.log('JwtStrategy - User not found for ID:', payload.sub);
-      throw new UnauthorizedException('User not found');
+    
+    if (!payload || !payload.sub) {
+      console.error('JwtStrategy - Invalid payload: missing sub field');
+      throw new UnauthorizedException('Invalid token');
     }
-    console.log('JwtStrategy - User found:', user);
-    return {
-      userId: user._id.toString(), // Convert ObjectId to string
-      username: user.username,
-      email: user.email,
-      role: user.role,
-      sub: user._id.toString(), // Convert ObjectId to string
-    };
+
+    try {
+      const user = await this.userService.findById(payload.sub);
+      
+      if (!user) {
+        console.log('JwtStrategy - User not found for ID:', payload.sub);
+        throw new UnauthorizedException('User not found');
+      }
+
+      // Log successful validation
+      console.log('JwtStrategy - User validated successfully:', {
+        userId: user._id,
+        username: user.username,
+        role: user.role
+      });
+
+      // Return consistent user object structure
+      return {
+        userId: user._id.toString(),
+        username: user.username,
+        email: user.email || '',
+        phoneNumber: user.phoneNumber || '',
+        role: user.role || 'user',
+        sub: user._id.toString()
+      };
+    } catch (error) {
+      console.error('JwtStrategy - Validation error:', error);
+      throw new UnauthorizedException('User validation failed');
+    }
   }
 }
