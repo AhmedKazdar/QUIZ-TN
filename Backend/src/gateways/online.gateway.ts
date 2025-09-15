@@ -11,12 +11,10 @@ import { Injectable } from '@nestjs/common';
 
 @WebSocketGateway({
   cors: {
-    origin: [
-      'http://localhost:5173',
-      'http://10.0.2.2:3001',
-      'http://192.168.1.115:3001',
-    ],
+    origin: '*',
+    credentials: true,
   },
+  path: '/socket.io',
 })
 @Injectable()
 export class OnlineGateway implements OnGatewayConnection, OnGatewayDisconnect {

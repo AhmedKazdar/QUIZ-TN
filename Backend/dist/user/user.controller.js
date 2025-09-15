@@ -27,6 +27,7 @@ const bcrypt = require("bcrypt");
 const swagger_1 = require("@nestjs/swagger");
 const libphonenumber_js_1 = require("libphonenumber-js");
 const online_gateway_1 = require("../gateways/online.gateway");
+const swagger_2 = require("@nestjs/swagger");
 let UserController = class UserController {
     userService;
     authService;
@@ -39,6 +40,24 @@ let UserController = class UserController {
         this.infobipOtpService = infobipOtpService;
         this.jwtService = jwtService;
         this.onlineGateway = onlineGateway;
+    }
+    async checkUsername(username) {
+        if (!username) {
+            throw new common_1.HttpException('Username is required', common_1.HttpStatus.BAD_REQUEST);
+        }
+        return this.userService.checkUsernameExists(username);
+    }
+    async checkEmail(email) {
+        if (!email) {
+            throw new common_1.HttpException('Email is required', common_1.HttpStatus.BAD_REQUEST);
+        }
+        return this.userService.checkEmailExists(email);
+    }
+    async checkPhoneNumber(phoneNumber) {
+        if (!phoneNumber) {
+            throw new common_1.HttpException('Phone number is required', common_1.HttpStatus.BAD_REQUEST);
+        }
+        return this.userService.checkPhoneNumberExists(phoneNumber);
     }
     async register(createUserDto) {
         try {
@@ -223,6 +242,36 @@ let UserController = class UserController {
     }
 };
 exports.UserController = UserController;
+__decorate([
+    (0, common_1.Get)('check-username'),
+    (0, swagger_1.ApiOperation)({ summary: 'Check if username exists' }),
+    (0, swagger_2.ApiQuery)({ name: 'username', required: true, type: String }),
+    (0, swagger_1.ApiOkResponse)({ description: 'Returns if username exists' }),
+    __param(0, (0, common_1.Query)('username')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], UserController.prototype, "checkUsername", null);
+__decorate([
+    (0, common_1.Get)('check-email'),
+    (0, swagger_1.ApiOperation)({ summary: 'Check if email exists' }),
+    (0, swagger_2.ApiQuery)({ name: 'email', required: true, type: String }),
+    (0, swagger_1.ApiOkResponse)({ description: 'Returns if email exists' }),
+    __param(0, (0, common_1.Query)('email')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], UserController.prototype, "checkEmail", null);
+__decorate([
+    (0, common_1.Get)('check-phone'),
+    (0, swagger_1.ApiOperation)({ summary: 'Check if phone number exists' }),
+    (0, swagger_2.ApiQuery)({ name: 'phoneNumber', required: true, type: String }),
+    (0, swagger_1.ApiOkResponse)({ description: 'Returns if phone number exists' }),
+    __param(0, (0, common_1.Query)('phoneNumber')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], UserController.prototype, "checkPhoneNumber", null);
 __decorate([
     (0, common_1.Post)('register'),
     (0, swagger_1.ApiOperation)({ summary: 'Register a new user' }),

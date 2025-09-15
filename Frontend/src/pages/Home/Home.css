@@ -520,8 +520,6 @@ body {
     padding: 1rem;
   }
 
-
-  
   .mode-buttons {
     grid-template-columns: 1fr;
     gap: 1rem;

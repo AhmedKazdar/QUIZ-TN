@@ -12,6 +12,7 @@ import {
   UnauthorizedException,
   Request,
   Req,
+  Query,
 } from '@nestjs/common';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
@@ -33,6 +34,7 @@ import {
 } from '@nestjs/swagger';
 import { parsePhoneNumberWithError } from 'libphonenumber-js';
 import { OnlineGateway } from 'src/gateways/online.gateway';
+import { ApiQuery } from '@nestjs/swagger';
 
 @ApiTags('users')
 @Controller('users')
@@ -44,6 +46,39 @@ export class UserController {
     private readonly jwtService: JwtService,
     private readonly onlineGateway: OnlineGateway,
   ) {}
+
+  @Get('check-username')
+  @ApiOperation({ summary: 'Check if username exists' })
+  @ApiQuery({ name: 'username', required: true, type: String })
+  @ApiOkResponse({ description: 'Returns if username exists' })
+  async checkUsername(@Query('username') username: string) {
+    if (!username) {
+      throw new HttpException('Username is required', HttpStatus.BAD_REQUEST);
+    }
+    return this.userService.checkUsernameExists(username);
+  }
+
+  @Get('check-email')
+  @ApiOperation({ summary: 'Check if email exists' })
+  @ApiQuery({ name: 'email', required: true, type: String })
+  @ApiOkResponse({ description: 'Returns if email exists' })
+  async checkEmail(@Query('email') email: string) {
+    if (!email) {
+      throw new HttpException('Email is required', HttpStatus.BAD_REQUEST);
+    }
+    return this.userService.checkEmailExists(email);
+  }
+
+  @Get('check-phone')
+  @ApiOperation({ summary: 'Check if phone number exists' })
+  @ApiQuery({ name: 'phoneNumber', required: true, type: String })
+  @ApiOkResponse({ description: 'Returns if phone number exists' })
+  async checkPhoneNumber(@Query('phoneNumber') phoneNumber: string) {
+    if (!phoneNumber) {
+      throw new HttpException('Phone number is required', HttpStatus.BAD_REQUEST);
+    }
+    return this.userService.checkPhoneNumberExists(phoneNumber);
+  }
 
   @Post('register')
   @ApiOperation({ summary: 'Register a new user' })

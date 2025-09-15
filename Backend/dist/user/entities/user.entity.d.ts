@@ -6,9 +6,11 @@ export declare class User {
     id: string;
     username: string;
     email: string;
+    phoneNumber: string;
     password: string;
     role: UserRole;
     isActive: boolean;
     createdAt: Date;
     updatedAt: Date;
+    lastActive: Date;
 }

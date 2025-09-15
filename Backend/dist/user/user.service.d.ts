@@ -11,6 +11,15 @@ export declare class UserService {
     private infobipOtpService;
     constructor(userModel: Model<UserDocument>, jwtService: JwtService, infobipOtpService: InfobipOtpService);
     findByPhoneNumber(phoneNumber: string): Promise<UserDocument | null>;
+    checkUsernameExists(username: string): Promise<{
+        exists: boolean;
+    }>;
+    checkEmailExists(email: string): Promise<{
+        exists: boolean;
+    }>;
+    checkPhoneNumberExists(phoneNumber: string): Promise<{
+        exists: boolean;
+    }>;
     private checkIfUserExists;
     create(createUserDto: CreateUserDto): Promise<{
         user: UserDocument;

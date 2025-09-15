@@ -484,7 +484,7 @@ const Home = () => {
             <div className="game-mode-options">
               <div className="card">
                 <div className="card-header">
-                  <h2>Select Game Mode</h2>
+                  <h2 style={{color:"#4361ee"}}>Select Game Mode</h2>
 
                 </div>
                 

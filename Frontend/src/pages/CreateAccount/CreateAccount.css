@@ -2,16 +2,19 @@
 :root {
   --primary: #6C63FF;
   --primary-light: #8A85FF;
+  --primary-dark: #4A45B1;
   --secondary: #4A45B1;
   --dark: #1A1A2E;
   --darker: #16213E;
   --light: #F8F9FA;
   --gray: #E0E0E0;
+  --gray-light: #f5f5f5;
   --gray-dark: #757575;
   --success: #4CAF50;
   --error: #F44336;
   --box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
   --text-light: #6c757d;
+  --text-dark: #333;
   --light-bg: #f8f9fa;
   --card-bg: #ffffff;
   --error-color: #e63946;
@@ -32,20 +35,197 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background: var(--light-bg);
-  color: var(--text-color);
+  color: var(--text-dark);
   line-height: 1.6;
 }
 
 /* Container */
 .create-account-container {
   display: flex;
-  justify-content: center;
-  align-items: center;
   min-height: 100vh;
-  padding: 2rem;
-  background: linear-gradient(135deg, #f5f7ff 0%, #f0f4ff 100%);
+  background: var(--light-bg);
   position: relative;
   overflow: hidden;
+}
+
+/* Main Content */
+.main-content {
+  flex: 1;
+  padding: 2rem;
+  margin-left: 0;
+  transition: var(--transition);
+  overflow-y: auto;
+}
+
+.main-content.menu-open {
+  margin-left: 240px;
+}
+
+.create-account-content {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 2rem 0;
+}
+
+/* Card */
+.create-account-card {
+  background: var(--card-bg);
+  border-radius: var(--border-radius);
+  box-shadow: var(--box-shadow);
+  padding: 2.5rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.create-account-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 2rem;
+  position: relative;
+}
+
+.create-account-header h2 {
+  color: var(--dark);
+  font-size: 1.75rem;
+  font-weight: 600;
+  margin: 0 auto;
+  text-align: center;
+  flex: 1;
+}
+
+.back-button {
+  position: absolute;
+  left: 0;
+  color: var(--primary);
+  transition: var(--transition);
+}
+
+.back-button:hover {
+  background-color: rgba(108, 99, 255, 0.1);
+  transform: translateX(-3px);
+}
+
+/* Form */
+.create-account-form {
+  margin-top: 1.5rem;
+}
+
+/* Form Fields */
+.MuiFormControl-root {
+  margin-bottom: 1.5rem;
+  width: 100%;
+}
+
+.MuiInputLabel-root {
+  color: var(--text-light) !important;
+}
+
+.MuiOutlinedInput-root {
+  background-color: var(--gray-light);
+  border-radius: var(--border-radius) !important;
+  transition: var(--transition);
+}
+
+.MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline {
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 2px rgba(108, 99, 255, 0.2);
+}
+
+.MuiInputLabel-root.Mui-focused {
+  color: var(--primary) !important;
+}
+
+.MuiInputAdornment-root {
+  color: var(--gray-dark);
+}
+
+/* Buttons */
+.create-account-button {
+  margin-top: 1.5rem !important;
+  padding: 12px 24px !important;
+  font-weight: 600 !important;
+  text-transform: none !important;
+  font-size: 1rem !important;
+  border-radius: var(--border-radius) !important;
+  background: var(--primary) !important;
+  transition: var(--transition) !important;
+  box-shadow: 0 4px 6px rgba(108, 99, 255, 0.2) !important;
+}
+
+.create-account-button:hover {
+  background: var(--primary-dark) !important;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 12px rgba(108, 99, 255, 0.3) !important;
+}
+
+.create-account-button:active {
+  transform: translateY(0);
+}
+
+.create-account-button.Mui-disabled {
+  background: var(--gray) !important;
+  color: var(--gray-dark) !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+/* Error Messages */
+.MuiFormHelperText-root.Mui-error {
+  color: var(--error) !important;
+  margin-left: 0;
+  font-size: 0.75rem;
+}
+
+.error-text {
+  color: var(--error);
+  font-size: 0.75rem;
+  margin-top: 4px;
+  margin-left: 14px;
+}
+
+/* Login Link */
+.login-link {
+  text-align: center;
+  margin-top: 1.5rem;
+  color: var(--text-light);
+  font-size: 0.9rem;
+}
+
+.login-link span {
+  color: var(--primary);
+  font-weight: 500;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.login-link span:hover {
+  color: var(--primary-dark);
+  text-decoration: underline;
+}
+
+/* Responsive Design */
+@media (max-width: 960px) {
+  .main-content {
+    padding: 1rem;
+  }
+  
+  .create-account-card {
+    padding: 1.5rem;
+  }
+  
+  .main-content.menu-open {
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 600px) {
+  .create-account-header h2 {
+    font-size: 1.5rem;
+  }
+  
+  .create-account-card {
+    padding: 1.25rem;
+  }
 }
 
 /* Paper/Card */

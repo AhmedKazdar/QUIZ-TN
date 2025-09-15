@@ -10,6 +10,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { JwtService } from '@nestjs/jwt';
 import { User, UserDocument } from './user.schema';
+import { UserRole } from './entities/user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { LoginDto } from './dto/login.dto';
 import * as bcrypt from 'bcryptjs';
@@ -26,6 +27,21 @@ export class UserService {
 
   async findByPhoneNumber(phoneNumber: string): Promise<UserDocument | null> {
     return this.userModel.findOne({ phoneNumber }).exec();
+  }
+
+  async checkUsernameExists(username: string): Promise<{ exists: boolean }> {
+    const user = await this.userModel.findOne({ username }).select('_id').lean();
+    return { exists: !!user };
+  }
+
+  async checkEmailExists(email: string): Promise<{ exists: boolean }> {
+    const user = await this.userModel.findOne({ email }).select('_id').lean();
+    return { exists: !!user };
+  }
+
+  async checkPhoneNumberExists(phoneNumber: string): Promise<{ exists: boolean }> {
+    const user = await this.userModel.findOne({ phoneNumber }).select('_id').lean();
+    return { exists: !!user };
   }
 
   private async checkIfUserExists(createUserDto: CreateUserDto): Promise<void> {
@@ -65,6 +81,19 @@ export class UserService {
   }> {
     console.log('[UserService] Creating new user:', createUserDto.username);
     
+    // Validate required fields
+    if (!createUserDto.username) {
+      throw new BadRequestException('Username is required');
+    }
+    
+    if (!createUserDto.email) {
+      throw new BadRequestException('Email is required');
+    }
+    
+    if (!createUserDto.phoneNumber) {
+      throw new BadRequestException('Phone number is required');
+    }
+    
     // Check if username already exists
     const existingUser = await this.userModel.findOne({ 
       username: createUserDto.username 
@@ -75,39 +104,30 @@ export class UserService {
       throw new ConflictException('Username already exists');
     }
 
-    // Check if email already exists (if provided)
-    if (createUserDto.email) {
-      const emailUser = await this.userModel.findOne({ 
-        email: createUserDto.email 
-      }).exec();
-      
-      if (emailUser) {
-        console.log(`[UserService] Email already exists: ${createUserDto.email}`);
-        throw new ConflictException('Email already exists');
-      }
+    // Check if email already exists
+    const emailUser = await this.userModel.findOne({ 
+      email: createUserDto.email 
+    }).exec();
+    
+    if (emailUser) {
+      console.log(`[UserService] Email already exists: ${createUserDto.email}`);
+      throw new ConflictException('Email already exists');
     }
 
-    // Check if phone number already exists (if provided)
-    if (createUserDto.phoneNumber) {
-      const phoneUser = await this.userModel.findOne({ 
-        phoneNumber: createUserDto.phoneNumber 
-      }).exec();
-      
-      if (phoneUser) {
-        console.log(`[UserService] Phone number already exists: ${createUserDto.phoneNumber}`);
-        throw new ConflictException('Phone number already exists');
-      }
+    // Check if phone number already exists
+    const phoneUser = await this.userModel.findOne({ 
+      phoneNumber: createUserDto.phoneNumber 
+    }).exec();
+    
+    if (phoneUser) {
+      console.log(`[UserService] Phone number already exists: ${createUserDto.phoneNumber}`);
+      throw new ConflictException('Phone number already exists');
     }
 
-    // Password validation
+    // Password validation is handled by DTO, but we'll double-check here
     if (!createUserDto.password) {
       console.log('[UserService] Password is required');
       throw new BadRequestException('Password is required');
-    }
-
-    if (createUserDto.password.length < 6) {
-      console.log('[UserService] Password is too short');
-      throw new BadRequestException('Password must be at least 6 characters long');
     }
 
     console.log('[UserService] Hashing password...');
@@ -116,11 +136,14 @@ export class UserService {
     console.log('[UserService] Password hashed successfully');
 
     const userData = {
-      phoneNumber: createUserDto.phoneNumber,
       username: createUserDto.username,
-      role: createUserDto.role || 'user',
       email: createUserDto.email,
+      phoneNumber: createUserDto.phoneNumber,
+      role: createUserDto.role || UserRole.USER,
       password: hashedPassword,
+      isActive: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
       lastActive: new Date(),
     };
 

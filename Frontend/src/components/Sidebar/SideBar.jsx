@@ -8,12 +8,22 @@ const SideBar = ({ username, role, isOpen = false, onLogout }) => {
   const navigate = useNavigate();
   const isActive = (path) => location.pathname === path ? 'active' : '';
 
-  const menuItems = [
+  // Base menu items for all users
+  const baseMenuItems = [
     { path: '/home', icon: <FaHome />, label: 'Home' },
-    { path: '/questions', icon: <FaQuestionCircle />, label: 'Questions' },
-    { path: '/responses', icon: <FaClipboardList />, label: 'Responses' },
     { path: '/profile', icon: <FaUser />, label: 'My Profile' }
   ];
+
+  // Additional menu items for non-user roles
+  const additionalMenuItems = [
+    { path: '/questions', icon: <FaQuestionCircle />, label: 'Questions' },
+    { path: '/responses', icon: <FaClipboardList />, label: 'Responses' },
+  ];
+
+  // Combine menu items based on user role
+  const menuItems = role === 'user' 
+    ? baseMenuItems 
+    : [...baseMenuItems, ...additionalMenuItems];
 
   const adminItems = [
     { path: '/admin/users', icon: <FaUsers />, label: 'Users' },

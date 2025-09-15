@@ -18,6 +18,7 @@ const mongoose_1 = require("@nestjs/mongoose");
 const mongoose_2 = require("mongoose");
 const jwt_1 = require("@nestjs/jwt");
 const user_schema_1 = require("./user.schema");
+const user_entity_1 = require("./entities/user.entity");
 const bcrypt = require("bcryptjs");
 const infobip_otp_service_1 = require("../infobip-otp/infobip-otp.service");
 let UserService = class UserService {
@@ -31,6 +32,18 @@ let UserService = class UserService {
     }
     async findByPhoneNumber(phoneNumber) {
         return this.userModel.findOne({ phoneNumber }).exec();
+    }
+    async checkUsernameExists(username) {
+        const user = await this.userModel.findOne({ username }).select('_id').lean();
+        return { exists: !!user };
+    }
+    async checkEmailExists(email) {
+        const user = await this.userModel.findOne({ email }).select('_id').lean();
+        return { exists: !!user };
+    }
+    async checkPhoneNumberExists(phoneNumber) {
+        const user = await this.userModel.findOne({ phoneNumber }).select('_id').lean();
+        return { exists: !!user };
     }
     async checkIfUserExists(createUserDto) {
         const { username, email, phoneNumber } = createUserDto;
@@ -57,6 +70,15 @@ let UserService = class UserService {
     }
     async create(createUserDto) {
         console.log('[UserService] Creating new user:', createUserDto.username);
+        if (!createUserDto.username) {
+            throw new common_1.BadRequestException('Username is required');
+        }
+        if (!createUserDto.email) {
+            throw new common_1.BadRequestException('Email is required');
+        }
+        if (!createUserDto.phoneNumber) {
+            throw new common_1.BadRequestException('Phone number is required');
+        }
         const existingUser = await this.userModel.findOne({
             username: createUserDto.username
         }).exec();
@@ -64,42 +86,37 @@ let UserService = class UserService {
             console.log(`[UserService] Username already exists: ${createUserDto.username}`);
             throw new common_1.ConflictException('Username already exists');
         }
-        if (createUserDto.email) {
-            const emailUser = await this.userModel.findOne({
-                email: createUserDto.email
-            }).exec();
-            if (emailUser) {
-                console.log(`[UserService] Email already exists: ${createUserDto.email}`);
-                throw new common_1.ConflictException('Email already exists');
-            }
+        const emailUser = await this.userModel.findOne({
+            email: createUserDto.email
+        }).exec();
+        if (emailUser) {
+            console.log(`[UserService] Email already exists: ${createUserDto.email}`);
+            throw new common_1.ConflictException('Email already exists');
         }
-        if (createUserDto.phoneNumber) {
-            const phoneUser = await this.userModel.findOne({
-                phoneNumber: createUserDto.phoneNumber
-            }).exec();
-            if (phoneUser) {
-                console.log(`[UserService] Phone number already exists: ${createUserDto.phoneNumber}`);
-                throw new common_1.ConflictException('Phone number already exists');
-            }
+        const phoneUser = await this.userModel.findOne({
+            phoneNumber: createUserDto.phoneNumber
+        }).exec();
+        if (phoneUser) {
+            console.log(`[UserService] Phone number already exists: ${createUserDto.phoneNumber}`);
+            throw new common_1.ConflictException('Phone number already exists');
         }
         if (!createUserDto.password) {
             console.log('[UserService] Password is required');
             throw new common_1.BadRequestException('Password is required');
-        }
-        if (createUserDto.password.length < 6) {
-            console.log('[UserService] Password is too short');
-            throw new common_1.BadRequestException('Password must be at least 6 characters long');
         }
         console.log('[UserService] Hashing password...');
         const saltRounds = 10;
         const hashedPassword = await bcrypt.hash(createUserDto.password, saltRounds);
         console.log('[UserService] Password hashed successfully');
         const userData = {
-            phoneNumber: createUserDto.phoneNumber,
             username: createUserDto.username,
-            role: createUserDto.role || 'user',
             email: createUserDto.email,
+            phoneNumber: createUserDto.phoneNumber,
+            role: createUserDto.role || user_entity_1.UserRole.USER,
             password: hashedPassword,
+            isActive: true,
+            createdAt: new Date(),
+            updatedAt: new Date(),
             lastActive: new Date(),
         };
         console.log('[UserService] Creating user with data:', {

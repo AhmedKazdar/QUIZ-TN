@@ -10,11 +10,13 @@ class User {
     id;
     username;
     email;
+    phoneNumber;
     password;
     role;
     isActive;
     createdAt;
     updatedAt;
+    lastActive;
 }
 exports.User = User;
 //# sourceMappingURL=user.entity.js.map

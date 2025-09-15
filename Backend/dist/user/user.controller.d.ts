@@ -12,6 +12,15 @@ export declare class UserController {
     private readonly jwtService;
     private readonly onlineGateway;
     constructor(userService: UserService, authService: AuthService, infobipOtpService: InfobipOtpService, jwtService: JwtService, onlineGateway: OnlineGateway);
+    checkUsername(username: string): Promise<{
+        exists: boolean;
+    }>;
+    checkEmail(email: string): Promise<{
+        exists: boolean;
+    }>;
+    checkPhoneNumber(phoneNumber: string): Promise<{
+        exists: boolean;
+    }>;
     register(createUserDto: CreateUserDto): Promise<{
         message: string;
         user: {

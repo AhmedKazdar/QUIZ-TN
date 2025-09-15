@@ -81,12 +81,10 @@ __decorate([
 exports.OnlineGateway = OnlineGateway = __decorate([
     (0, websockets_1.WebSocketGateway)({
         cors: {
-            origin: [
-                'http://localhost:5173',
-                'http://10.0.2.2:3001',
-                'http://192.168.1.115:3001',
-            ],
+            origin: '*',
+            credentials: true,
         },
+        path: '/socket.io',
     }),
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [user_service_1.UserService])
