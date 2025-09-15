@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { FaHome, FaQuestionCircle, FaClipboardList, FaSignOutAlt, FaUserPlus, FaUsers, FaUser, FaCog } from 'react-icons/fa';
 import './SideBar.css';
 
-const SideBar = ({ username, role, isOpen = false, onLogout }) => {
+const SideBar = ({ username, role, isOpen = false, onLogout, onClose, onToggle }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const isActive = (path) => location.pathname === path ? 'active' : '';
@@ -30,11 +30,36 @@ const SideBar = ({ username, role, isOpen = false, onLogout }) => {
     { path: '/admin/create-account', icon: <FaUserPlus />, label: 'Create Account' }
   ];
 
+  // Close sidebar when clicking outside on mobile
+  const handleClickOutside = (e) => {
+    if (isOpen && window.innerWidth < 768) {
+      onClose?.();
+    }
+  };
+
+  // Close sidebar when route changes on mobile
+  React.useEffect(() => {
+    if (isOpen && window.innerWidth < 768) {
+      const unlisten = () => onClose?.();
+      window.addEventListener('popstate', unlisten);
+      return () => window.removeEventListener('popstate', unlisten);
+    }
+  }, [isOpen, onClose]);
+
   return (
-    <div className={`sidebar ${isOpen ? 'active' : ''}`}>
-      <div className="sidebar-header">
-        <h2>Quiz Dashboard</h2>
-      </div>
+    <>
+      <div className={`sidebar-overlay ${isOpen ? 'active' : ''}`} onClick={handleClickOutside} />
+      <div className={`sidebar ${isOpen ? 'active' : ''}`}>
+        <div className="sidebar-header">
+          <h2>Quiz Dashboard</h2>
+          <button 
+            className="close-sidebar" 
+            onClick={onClose}
+            aria-label="Close sidebar"
+          >
+            &times;
+          </button>
+        </div>
       {username && (
         <div 
           className="sidebar-user" 
@@ -84,7 +109,11 @@ const SideBar = ({ username, role, isOpen = false, onLogout }) => {
           <span>Logout</span>
         </button>
       </div>
-    </div>
+      </div>
+      <button className="sidebar-toggle" onClick={onToggle} aria-label="Toggle sidebar">
+        ☰
+      </button>
+    </>
   );
 };
 

@@ -160,76 +160,65 @@ const CreateAccount = () => {
   
   // Handle WebSocket connection and user authentication
   useEffect(() => {
-    const initializeWebSocket = async () => {
+    let isMounted = true;
+    
+    const handleStorageChange = (e) => {
+      if (e.key === 'token') {
+        if (!e.newValue) {
+          // Token was removed
+          if (socketService && typeof socketService.disconnect === 'function') {
+            socketService.disconnect();
+          }
+          clearAuthData();
+          navigate('/login');
+        } else if (e.oldValue !== e.newValue) {
+          // Token changed, reinitialize
+          initializeAuthAndWebSocket();
+        }
+      }
+    };
+    
+    const initializeAuthAndWebSocket = async () => {
       try {
         const token = localStorage.getItem('token');
         const user = getCurrentUser();
         
-        if (token && user) {
-          // Set user data from token
+        if (!token || !user) {
+          clearAuthData();
+          navigate('/login');
+          return;
+        }
+        
+        if (isMounted) {
           setUsername(user.username || user.sub);
           setRole(user.role);
-          
-          // Initialize WebSocket connection if not already connected
-          if (!socketService.isConnected()) {
-            socketService.connect();
+        }
+        
+        // Initialize WebSocket if not already connected
+        if (socketService && typeof socketService.isConnected === 'function' && !socketService.isConnected()) {
+          try {
+            await socketService.initialize();
+            console.log('WebSocket connected successfully');
+          } catch (wsError) {
+            console.warn('WebSocket connection failed (non-critical):', wsError);
           }
-          
-          // Listen for online users updates
-          const handleOnlineUsers = (users) => {
-            console.log('Online users updated:', users);
-            setOnlineUsers(users);
-          };
-          
-          socketService.listenToOnlineUsers(handleOnlineUsers);
-          
-          return () => {
-            // Clean up event listener when component unmounts
-            socketService.off('onlineUsers');
-          };
-        } else {
-          // Redirect to login if not authenticated
-          navigate('/login');
         }
       } catch (error) {
-        console.error('Error initializing WebSocket:', error);
-        // Clear invalid auth data and redirect to login
+        console.error('Authentication check failed:', error);
         clearAuthData();
         navigate('/login');
       }
     };
     
-    initializeWebSocket();
-    
-    // Set up token change listener
-    const handleStorageChange = (e) => {
-      if (e.key === 'token') {
-        if (!e.newValue) {
-          // Token was removed, disconnect WebSocket
-          socketService.disconnect();
-          clearAuthData();
-          navigate('/login');
-        } else if (e.oldValue !== e.newValue) {
-          // Token changed, reinitialize WebSocket
-          socketService.disconnect();
-          initializeWebSocket();
-        }
-      }
-    };
-    
-    // Also handle page visibility changes
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && !socketService.isConnected()) {
-        initializeWebSocket();
-      }
-    };
+    // Initial check
+    initializeAuthAndWebSocket();
     
     window.addEventListener('storage', handleStorageChange);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
     
     return () => {
+      isMounted = false;
       window.removeEventListener('storage', handleStorageChange);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      // Don't disconnect WebSocket here as it might be used by other components
     };
   }, [navigate]);
 
@@ -497,9 +486,17 @@ const CreateAccount = () => {
     setTimeout(() => navigate(-1), 300);
   };
 
-  // Redirect if not authenticated or not admin
-  if (!isAuthenticated() || role !== 'admin') {
-    navigate('/unauthorized');
+  // Handle admin-only access
+  useEffect(() => {
+    if (!isAuthenticated()) {
+      navigate('/login');
+    } else if (role && role !== 'admin') {
+      navigate('/unauthorized');
+    }
+  }, [navigate, role]);
+
+  // Don't render until we've checked authentication
+  if (!isAuthenticated() || (role && role !== 'admin')) {
     return null;
   }
 
@@ -514,9 +511,10 @@ const CreateAccount = () => {
             transition={{ duration: 0.5 }}
             className="create-account-card"
           >
-            <div className="create-account-header">
+       {/*      <div className="create-account-header">
               <h2>Create New Account</h2>
-            </div>
+            </div> */}
+            <Typography variant="h4" component="h1" className="page-title">Create New Account</Typography>
             
             <form onSubmit={handleSubmit} className="create-account-form">
               <Grid container spacing={2}>

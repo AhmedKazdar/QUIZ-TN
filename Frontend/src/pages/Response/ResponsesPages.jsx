@@ -2,6 +2,8 @@ import React, { useEffect, useState } from "react";
 import axios from "axios";
 import SideBar from "../../components/Sidebar/SideBar";
 import { isAuthenticated } from "../../utils/auth";
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+import DeleteIcon from '@mui/icons-material/Delete';
 import {
   Button,
   IconButton,
@@ -96,7 +98,35 @@ const ResponsesPage = () => {
   const navigate = useNavigate();
   const [username, setUsername] = useState(null);
   const [role, setRole] = useState(null);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  
+  // Handle window resize for mobile detection
+  useEffect(() => {
+    const handleResize = () => {
+      const mobileView = window.innerWidth < 768;
+      setIsMobile(mobileView);
+      
+      // Auto-close sidebar when switching to mobile view
+      if (mobileView && sidebarOpen) {
+        setSidebarOpen(false);
+      }
+    };
+    
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [sidebarOpen]);
+  
+  const toggleSidebar = () => {
+    setSidebarOpen(!sidebarOpen);
+  };
+  
+  const closeSidebar = () => {
+    if (isMobile) {
+      setSidebarOpen(false);
+    }
+  };
+  
   const [responses, setResponses] = useState([]);
   const [questions, setQuestions] = useState([]);
   const [newResponses, setNewResponses] = useState([
@@ -180,8 +210,30 @@ const ResponsesPage = () => {
       return;
     }
 
-    setIsSubmitting(true);
+    // Get the token from localStorage
+    const token = localStorage.getItem('token');
+    if (!token) {
+      showSnackbar("Authentication token not found. Please log in again.", "error");
+      return;
+    }
+
+    // Extract user ID from the token
+    const tokenParts = token.split('.');
+    if (tokenParts.length !== 3) {
+      showSnackbar("Invalid token format. Please log in again.", "error");
+      return;
+    }
+
     try {
+      const payload = JSON.parse(atob(tokenParts[1]));
+      const userId = payload.userId || payload.sub; // Try common JWT claims for user ID
+      
+      if (!userId) {
+        throw new Error("User ID not found in token");
+      }
+
+      setIsSubmitting(true);
+      
       // Validate questionIds
       for (const response of newResponses) {
         if (!response.questionId || response.questionId.trim() === "") {
@@ -193,8 +245,9 @@ const ResponsesPage = () => {
       // Bulk create responses by sending a batch request to the backend
       const responseData = newResponses.map((response) => ({
         text: response.text,
-        questionId: response.questionId, // Assuming it's in ObjectId format
+        questionId: response.questionId,
         isCorrect: response.isCorrect,
+        userId: userId
       }));
 
       // Make the POST request for creating multiple responses at once
@@ -204,6 +257,7 @@ const ResponsesPage = () => {
         {
           headers: {
             "Content-Type": "application/json",
+            'Authorization': `Bearer ${token}`
           },
         }
       );
@@ -234,19 +288,61 @@ const ResponsesPage = () => {
       return;
     }
 
+    // Get the token from localStorage
+    const token = localStorage.getItem('token');
+    if (!token) {
+      showSnackbar("Authentication token not found. Please log in again.", "error");
+      return;
+    }
+
+    // Extract user ID from the token
+    const tokenParts = token.split('.');
+    if (tokenParts.length !== 3) {
+      showSnackbar("Invalid token format. Please log in again.", "error");
+      return;
+    }
+
     try {
-      await axios.put(`http://localhost:3001/api/response/${editingResponse._id}`, {
+      const payload = JSON.parse(atob(tokenParts[1]));
+      const userId = payload.userId || payload.sub; // Try common JWT claims for user ID
+      
+      if (!userId) {
+        throw new Error("User ID not found in token");
+      }
+
+      const requestData = {
         text: editingResponse.text,
         isCorrect: editingResponse.isCorrect,
         questionId: editingResponse.questionId,
-      });
+        userId: userId
+      };
+
+      console.log('Sending update request with data:', requestData);
+      const response = await axios.put(
+        `http://localhost:3001/api/response/${editingResponse._id}`, 
+        requestData,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
+      console.log('Update response:', response.data);
       fetchResponses();
       setModalOpen(false);
       setEditingResponse(null);
       showSnackbar("Response updated successfully!", "success");
     } catch (error) {
       console.error("Error editing response:", error);
-      showSnackbar("Error updating response.", "error");
+      console.error("Full error response:", error.response?.data);
+      // If the error contains an array of messages, join them with newlines
+      const errorMessage = Array.isArray(error.response?.data?.message) 
+        ? error.response.data.message.join('\n')
+        : error.response?.data?.message || 
+          error.message || 
+          "Error updating response. Please try again.";
+      showSnackbar(`Error: ${errorMessage}`, "error");
     }
   };
 
@@ -315,14 +411,14 @@ const ResponsesPage = () => {
     if (userRole) setRole(userRole);
   }, [navigate]);
 
-  const toggleSidebar = () => setSidebarOpen(!sidebarOpen);
-
   return (
-    <div style={{ display: "flex", minHeight: "100vh" }}>
+    <div className={`main-content ${sidebarOpen && isMobile ? 'sidebar-open' : ''}`}>
       <SideBar 
         username={username} 
         role={role} 
         isOpen={sidebarOpen} 
+        onToggle={toggleSidebar}
+        onClose={closeSidebar}
         onLogout={() => {
           localStorage.removeItem("token");
           localStorage.removeItem("username");
@@ -360,17 +456,9 @@ const ResponsesPage = () => {
             mb: 2,
             gap: 2
           }}>
-            <Typography 
-              variant="h4" 
-              component="h1" 
-              sx={{ 
-                color: 'text.primary', 
-                fontWeight: 'bold',
-                flexShrink: 0
-              }}
-            >
-              Responses
-            </Typography>
+             <Typography variant="h4" component="h1" className="page-title">
+                         Responses Management
+                       </Typography>
             <Button
               variant="contained"
               startIcon={<AddIcon />}
@@ -417,93 +505,137 @@ const ResponsesPage = () => {
               </Button>
             </Box>
           ) : (
-            <TableContainer>
-              <Table>
-                <TableHead>
-                  <TableRow sx={{ backgroundColor: 'background.paper' }}>
-                    <TableCell sx={{ fontWeight: 'bold', color: 'text.primary' }}>#</TableCell>
-                    <TableCell sx={{ fontWeight: 'bold', color: 'text.primary' }}>Response</TableCell>
-                    <TableCell sx={{ fontWeight: 'bold', color: 'text.primary' }}>Question</TableCell>
-                    <TableCell sx={{ fontWeight: 'bold', color: 'text.primary', width: '150px' }}>Status</TableCell>
-                    <TableCell sx={{ fontWeight: 'bold', color: 'text.primary', width: '120px', textAlign: 'center' }}>Actions</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {currentResponses.map((res, index) => (
-                    <TableRow 
-                      key={res._id}
-                      sx={{ 
-                        '&:nth-of-type(odd)': { backgroundColor: 'action.hover' },
-                        '&:hover': { backgroundColor: 'action.selected' }
-                      }}
-                    >
-                      <TableCell>{indexOfFirstResponse + index + 1}</TableCell>
-                      <TableCell>
-                        <Typography variant="body1" sx={{ color: 'text.primary' }}>
-                          {res.text}
-                        </Typography>
-                      </TableCell>
-                      <TableCell>
-                        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                          {res.questionId?.textequestion || 'No Question'}
-                        </Typography>
-                      </TableCell>
-                      <TableCell>
-                        <Box 
-                          sx={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            px: 1.5,
-                            py: 0.5,
-                            borderRadius: 1,
-                            bgcolor: res.isCorrect ? 'success.light' : 'error.light',
-                            color: res.isCorrect ? 'success.dark' : 'error.dark',
-                            fontSize: '0.75rem',
-                            fontWeight: 'medium',
-                            textTransform: 'capitalize'
+            <>
+              {/* Desktop Table View */}
+              <Box sx={{ display: { xs: 'none', md: 'block' } }}>
+                <TableContainer className="table-container">
+                  <Table className="responses-table">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell sx={{ minWidth: '50px' }}>#</TableCell>
+                        <TableCell>Response</TableCell>
+                        <TableCell>Question</TableCell>
+                        <TableCell sx={{ width: '120px' }}>Status</TableCell>
+                        <TableCell sx={{ width: '120px', textAlign: 'center' }}>Actions</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {currentResponses.map((res, index) => (
+                        <TableRow key={res._id} hover>
+                          <TableCell>{indexOfFirstResponse + index + 1}</TableCell>
+                          <TableCell>
+                            <Typography variant="body2" noWrap sx={{ maxWidth: '300px' }}>
+                              {res.text}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2" color="textSecondary" noWrap sx={{ maxWidth: '300px' }}>
+                              {res.questionId?.textequestion || 'No Question'}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Box component="span" sx={statusBadgeStyle(res.isCorrect)}>
+                              {res.isCorrect ? 'Correct' : 'Incorrect'}
+                            </Box>
+                          </TableCell>
+                          <TableCell>
+                            <div className="action-buttons">
+                              <IconButton
+                                size="small"
+                                onClick={() => handleModalOpen(res)}
+                                title="Edit"
+                                sx={{ p: 0.5 }}
+                              >
+                                <Edit fontSize="small" color="primary" />
+                              </IconButton>
+                              <IconButton
+                                size="small"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteClick(res._id);
+                                }}
+                                title="Delete"
+                                disabled={isSubmitting}
+                                sx={{ p: 0.5 }}
+                              >
+                                <Delete fontSize="small" color="error" />
+                              </IconButton>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </Box>
+
+              {/* Mobile Card View */}
+              <Box sx={{ display: { xs: 'block', md: 'none' }, mt: 2 }}>
+                {currentResponses.map((res, index) => (
+                  <Paper 
+                    key={res._id} 
+                    sx={{ 
+                      mb: 2, 
+                      p: 2,
+                      '&:hover': {
+                        boxShadow: 3
+                      }
+                    }}
+                    elevation={1}
+                  >
+                    <Box sx={{ mb: 1 }}>
+                      <Typography variant="subtitle2" color="textSecondary">
+                        #{indexOfFirstResponse + index + 1}
+                      </Typography>
+                    </Box>
+                    <Box sx={{ mb: 1.5 }}>
+                      <Typography variant="subtitle2" color="textSecondary">Response:</Typography>
+                      <Typography variant="body1">{res.text}</Typography>
+                    </Box>
+                    <Box sx={{ mb: 1.5 }}>
+                      <Typography variant="subtitle2" color="textSecondary">Question:</Typography>
+                      <Typography variant="body2">{res.questionId?.textequestion || 'No Question'}</Typography>
+                    </Box>
+                    <Box sx={{ 
+                      display: 'flex', 
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      mt: 1,
+                      pt: 1,
+                      borderTop: '1px solid rgba(0,0,0,0.12)'
+                    }}>
+                      <Box component="span" sx={statusBadgeStyle(res.isCorrect)}>
+                        {res.isCorrect ? 'Correct' : 'Incorrect'}
+                      </Box>
+                      <Box>
+                        <IconButton
+                          size="small"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleModalOpen(res);
                           }}
+                          title="Edit"
+                          sx={{ mr: 0.5 }}
                         >
-                          {res.isCorrect ? 'Correct' : 'Incorrect'}
-                        </Box>
-                      </TableCell>
-                      <TableCell align="center">
-                        <Box display="flex" justifyContent="center" gap={0.5}>
-                            <IconButton
-                              size="small"
-                              onClick={() => handleModalOpen(res)}
-                              title="Edit"
-                              sx={{
-                                ...buttonStyles.icon,
-                                p: 0.5
-                              }}
-                            >
-                              <Edit fontSize="small" color="primary" />
-                            </IconButton>
-                            <IconButton
-                              size="small"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteClick(res._id);
-                              }}
-                              title="Delete"
-                              disabled={isSubmitting}
-                              sx={{
-                                ...buttonStyles.icon,
-                                '&:hover': {
-                                  backgroundColor: 'rgba(211, 47, 47, 0.08)'
-                                },
-                                p: 0.5
-                              }}
-                            >
-                              <Delete fontSize="small" color="error" />
-                            </IconButton>
-                        </Box>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
+                          <Edit fontSize="small" color="primary" />
+                        </IconButton>
+                        <IconButton
+                          size="small"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteClick(res._id);
+                          }}
+                          title="Delete"
+                          disabled={isSubmitting}
+                        >
+                          <Delete fontSize="small" color="error" />
+                        </IconButton>
+                      </Box>
+                    </Box>
+                  </Paper>
+                ))}
+              </Box>
+            </>
           )}
 
           {/* Pagination */}
@@ -528,8 +660,14 @@ const ResponsesPage = () => {
       {/* Delete Confirmation Dialog */}
       <Modal 
         open={deleteConfirmOpen} 
-        onClose={() => setDeleteConfirmOpen(false)}
-        aria-labelledby="delete-confirmation-dialog"
+        onClose={() => !isSubmitting && setDeleteConfirmOpen(false)}
+        closeAfterTransition
+        BackdropProps={{
+          style: {
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            backdropFilter: 'blur(3px)'
+          }
+        }}
       >
         <Box
           sx={{
@@ -537,33 +675,63 @@ const ResponsesPage = () => {
             top: '50%',
             left: '50%',
             transform: 'translate(-50%, -50%)',
-            width: 400,
+            width: { xs: '90%', sm: 450 },
             bgcolor: 'background.paper',
             boxShadow: 24,
             p: 4,
-            borderRadius: 1,
+            borderRadius: 2,
+            outline: 'none',
+            maxHeight: '90vh',
+            overflowY: 'auto'
           }}
         >
-          <Typography variant="h6" gutterBottom>
-            Confirm Deletion
+          <Box sx={{ textAlign: 'center', mb: 3 }}>
+            <ErrorOutlineIcon color="error" sx={{ fontSize: 60, mb: 2 }} />
+            <Typography variant="h5" component="h2" gutterBottom style={{color: 'red'}}>
+              Confirm Deletion
+            </Typography>
+          </Box>
+          
+          <Typography variant="body1" align="center" sx={{ mb: 4, color: 'text.secondary' }}>
+            Are you sure you want to delete this response?
+            <br />
+            <strong>This action cannot be undone.</strong>
           </Typography>
-          <Typography variant="body1" sx={{ mb: 3 }}>
-            Are you sure you want to delete this response? This action cannot be undone.
-          </Typography>
-          <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
+          
+          <Box sx={{ 
+            display: 'flex', 
+            flexDirection: { xs: 'column', sm: 'row' }, 
+            justifyContent: 'center', 
+            gap: 2,
+            mt: 3
+          }}>
             <Button 
-              variant="outlined" 
+              variant="outlined"
+              fullWidth
               onClick={() => setDeleteConfirmOpen(false)}
               disabled={isSubmitting}
-              sx={buttonStyles.secondary}
+              sx={{
+                ...buttonStyles.secondary,
+                py: 1.5,
+                fontSize: '1rem'
+              }}
             >
               Cancel
             </Button>
             <Button 
               variant="contained"
+              fullWidth
               onClick={handleDelete}
               disabled={isSubmitting}
-              sx={buttonStyles.danger}
+              startIcon={isSubmitting ? <CircularProgress size={20} /> : <DeleteIcon />}
+              sx={{
+                ...buttonStyles.danger,
+                py: 1.5,
+                fontSize: '1rem',
+                '&:hover': {
+                  backgroundColor: 'error.dark',
+                }
+              }}
             >
               {isSubmitting ? 'Deleting...' : 'Delete'}
             </Button>
@@ -586,7 +754,7 @@ const ResponsesPage = () => {
             borderRadius: "8px",
           }}
         >
-          <Typography variant="h5" gutterBottom>
+          <Typography variant="h5" gutterBottom style={{color: 'initial'}}>
             {editingResponse ? "Edit Response" : "Create Responses"}
           </Typography>
 
@@ -605,8 +773,9 @@ const ResponsesPage = () => {
                 }
                 style={{ marginBottom: "20px" }}
               />
-              <FormControl fullWidth style={{ marginBottom: "20px" }}>
+              <FormControl fullWidth style={{ marginBottom: "20px" }} variant="outlined">
                 <InputLabel>Selected Question</InputLabel>
+                
                 <Select value={editingResponse.questionId} disabled>
                   {questions
                     .filter(
@@ -631,7 +800,8 @@ const ResponsesPage = () => {
                     }
                   />
                 }
-                label="Correct"
+                
+                label={<Typography style={{ color: "initial" }}>Correct</Typography>}
               />
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <Button
@@ -699,7 +869,7 @@ const ResponsesPage = () => {
                           }
                         />
                       }
-                      label="Correct"
+                      label={<Typography style={{ color: "initial" }}>Correct</Typography>}
                     />
                   </div>
                 ))}

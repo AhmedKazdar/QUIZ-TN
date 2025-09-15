@@ -32,7 +32,8 @@ import {
   Add as AddIcon,
   ArrowBack as ArrowBackIcon,
   Visibility as VisibilityIcon,
-  Close as CloseIcon
+  Close as CloseIcon,
+  ErrorOutline as ErrorOutlineIcon
 } from "@mui/icons-material";
 import SideBar from "../../components/Sidebar/SideBar";
 import "./Question.css";
@@ -45,6 +46,8 @@ const QuestionsTable = () => {
     type: "multiple-choice",
   });
   const [openDialog, setOpenDialog] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [questionToDelete, setQuestionToDelete] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [newQuestion, setNewQuestion] = useState({
     textequestion: "",
@@ -61,6 +64,7 @@ const QuestionsTable = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [username, setUsername] = useState("");
   const [role, setRole] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const formRef = useRef(null);
 
   useEffect(() => {
@@ -204,28 +208,37 @@ const QuestionsTable = () => {
     setNewQuestion({ textequestion: "", type: "" }); // Clear the form
   };
 
+  // Handle delete confirmation
+  const handleDeleteClick = (id) => {
+    setQuestionToDelete(id);
+    setDeleteConfirmOpen(true);
+  };
+
   // Handle delete with confirmation
-  const handleDelete = async (id) => {
-    if (window.confirm("Are you sure you want to delete this question?")) {
-      try {
-        const token = localStorage.getItem('token');
-        await axios.delete(`http://localhost:3001/api/question/delete/${id}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        fetchQuestions();
-        setSnackbar({
-          open: true,
-          message: 'Question deleted successfully!',
-          severity: 'success'
-        });
-      } catch (error) {
-        console.error("Error deleting question:", error);
-        setSnackbar({
-          open: true,
-          message: error.response?.data?.message || 'Failed to delete question',
-          severity: 'error'
-        });
-      }
+  const handleDelete = async () => {
+    if (!questionToDelete) return;
+    
+    try {
+      const token = localStorage.getItem('token');
+      await axios.delete(`http://localhost:3001/api/question/delete/${questionToDelete}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      fetchQuestions();
+      setSnackbar({
+        open: true,
+        message: 'Question deleted successfully!',
+        severity: 'success'
+      });
+    } catch (error) {
+      console.error("Error deleting question:", error);
+      setSnackbar({
+        open: true,
+        message: error.response?.data?.message || 'Failed to delete question',
+        severity: 'error'
+      });
+    } finally {
+      setDeleteConfirmOpen(false);
+      setQuestionToDelete(null);
     }
   };
 
@@ -418,7 +431,10 @@ const QuestionsTable = () => {
                               <IconButton
                                 size="small"
                                 color="error"
-                                onClick={() => handleDelete(q._id)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteClick(q._id);
+                                }}
                                 title="Delete"
                               >
                                 <DeleteIcon fontSize="small" />
@@ -518,6 +534,71 @@ const QuestionsTable = () => {
             </Button>
           </DialogActions>
         </form>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog 
+        open={deleteConfirmOpen} 
+        onClose={() => !isSubmitting && setDeleteConfirmOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <Box sx={{ p: 3 }}>
+          <Box sx={{ textAlign: 'center', mb: 3 }}>
+            <ErrorOutlineIcon color="error" sx={{ fontSize: 60, mb: 2 }} />
+            <Typography variant="h5" component="h2" gutterBottom style={{color: 'red'}}>
+              Confirm Deletion
+            </Typography>
+          </Box>
+          
+          <Typography variant="body1" align="center" sx={{ mb: 4, color: 'text.secondary' }}>
+            Are you sure you want to delete this question?
+            <br />
+            <strong>This action cannot be undone.</strong>
+          </Typography>
+          
+          <Box sx={{ 
+            display: 'flex', 
+            flexDirection: { xs: 'column', sm: 'row' }, 
+            justifyContent: 'center', 
+            gap: 2,
+            mt: 3
+          }}>
+            <Button 
+              variant="outlined"
+              fullWidth
+              onClick={() => setDeleteConfirmOpen(false)}
+              disabled={isSubmitting}
+              sx={{
+                py: 1.5,
+                fontSize: '1rem',
+                textTransform: 'none',
+                fontWeight: 500
+              }}
+            >
+              Cancel
+            </Button>
+            <Button 
+              variant="contained"
+              fullWidth
+              onClick={handleDelete}
+              disabled={isSubmitting}
+              startIcon={isSubmitting ? <CircularProgress size={20} /> : <DeleteIcon />}
+              sx={{
+                py: 1.5,
+                fontSize: '1rem',
+                backgroundColor: 'error.main',
+                '&:hover': {
+                  backgroundColor: 'error.dark',
+                },
+                textTransform: 'none',
+                fontWeight: 500
+              }}
+            >
+              {isSubmitting ? 'Deleting...' : 'Delete'}
+            </Button>
+          </Box>
+        </Box>
       </Dialog>
       
       {/* Snackbar for notifications */}

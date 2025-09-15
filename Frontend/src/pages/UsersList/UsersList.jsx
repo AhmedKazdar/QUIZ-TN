@@ -164,7 +164,7 @@ const UsersList = () => {
       <div className="main-content">
         <Box sx={{ p: 3, maxWidth: 1200, margin: '0 auto' }}>
           <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-            <Typography variant="h5" component="h1" fontWeight={600}>
+            <Typography variant="h4" component="h1" className="page-title">
               Users Management
             </Typography>
             <Button

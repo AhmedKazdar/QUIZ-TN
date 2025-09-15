@@ -7,10 +7,27 @@ import { jwtDecode } from "jwt-decode";
 import io from "socket.io-client";
 import SideBar from "../../components/Sidebar/SideBar";
 import { format, parse } from 'date-fns';
-import { TimePicker } from '@mui/x-date-pickers/TimePicker';
-import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
-import { TextField, Button, Box, Typography, List, ListItem, ListItemText, IconButton, Alert, Snackbar, CircularProgress } from '@mui/material';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { TimePicker } from '@mui/x-date-pickers/TimePicker';
+import {
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
+  Button,
+  TextField, 
+  Box, 
+  Typography, 
+  List, 
+  ListItem, 
+  ListItemText, 
+  IconButton, 
+  Alert, 
+  Snackbar, 
+  CircularProgress 
+} from '@mui/material';
 import { Add as AddIcon, Delete as DeleteIcon, Edit as EditIcon } from '@mui/icons-material';
 import { quizTimeService } from '../../services/quizTime.service';
 
@@ -28,6 +45,8 @@ const Home = () => {
   const [quizTimes, setQuizTimes] = useState([]);
   const [newTime, setNewTime] = useState(null);
   const [editingTime, setEditingTime] = useState(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [timeToDelete, setTimeToDelete] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const socketRef = useRef(null);
@@ -78,14 +97,28 @@ const Home = () => {
       await quizTimeService.deleteQuizTime(id);
       setQuizTimes(quizTimes.filter(time => time._id !== id));
       showSnackbar('Quiz time removed', 'info');
+      setDeleteDialogOpen(false);
+      setTimeToDelete(null);
     } catch (error) {
       showSnackbar('Failed to delete quiz time', 'error');
+      setDeleteDialogOpen(false);
+      setTimeToDelete(null);
     }
+  };
+
+  const handleDeleteClick = (time) => {
+    setTimeToDelete(time);
+    setDeleteDialogOpen(true);
   };
 
   const handleEditTime = (time) => {
     setEditingTime(time);
-    setNewTime(parse(time.time, 'HH:mm:ss', new Date()));
+    // Parse the time string into hours and minutes
+    const [hours, minutes] = time.time.split(':').map(Number);
+    // Create a new date object with today's date and the selected time
+    const date = new Date();
+    date.setHours(hours, minutes, 0, 0);
+    setNewTime(date);
   };
 
   const handleUpdateTime = async () => {
@@ -388,35 +421,57 @@ const Home = () => {
                 <div className="card">
                   <h3>Quiz Schedule</h3>
                   <LocalizationProvider dateAdapter={AdapterDateFns}>
-                    <Box sx={{ mb: 2, display: 'flex', gap: 1, alignItems: 'center' }}>
+                    <Box sx={{ mb: 2, display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: 2, alignItems: 'flex-start' }}>
                       <TimePicker
-                        label="New quiz time"
+                        label={editingTime ? 'Update quiz time' : 'New quiz time'}
                         value={newTime}
                         onChange={(newValue) => setNewTime(newValue)}
-                        renderInput={(params) => <TextField {...params} size="small" />}
+                        renderInput={(params) => (
+                          <TextField 
+                            {...params} 
+                            size="small"
+                            sx={{ minWidth: '150px' }}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        )}
+                        openTo="hours"
+                        views={['hours', 'minutes']}
+                        format="hh:mm a"
                       />
-                      <Button
-                        variant="contained"
-                        color="primary"
-                        onClick={editingTime ? handleUpdateTime : handleAddTime}
-                        startIcon={<AddIcon />}
-                        style={{width: '100px',height: '55px',marginBottom:'25px'}}
-                        disabled={!newTime}
-                        sx={{ mb: 2, display: 'flex', gap: 1, alignItems: 'center' }}
-                      >
-                        {editingTime ? 'Update' : 'Add'}
-                      </Button>
-                      {editingTime && (
+                      <Box sx={{ display: 'flex', gap: 1, width: { xs: '100%', sm: 'auto' } }}>
                         <Button
-                          variant="outlined"
-                          onClick={() => {
-                            setEditingTime(null);
-                            setNewTime(null);
+                          variant="contained"
+                          color="primary"
+                          onClick={editingTime ? handleUpdateTime : handleAddTime}
+                          startIcon={editingTime ? <EditIcon /> : <AddIcon />}
+                          disabled={!newTime}
+                          sx={{ 
+                            height: '40px',
+                            minWidth: '100px',
+                            whiteSpace: 'nowrap',
+                            flex: { xs: 1, sm: 'none' }
                           }}
                         >
-                          Cancel
+                          {editingTime ? 'Update' : 'Add'}
                         </Button>
-                      )}
+                        {editingTime && (
+                          <Button
+                            variant="outlined"
+                            onClick={() => {
+                              setEditingTime(null);
+                              setNewTime(null);
+                            }}
+                            sx={{ 
+                              height: '40px',
+                              minWidth: '100px',
+                              whiteSpace: 'nowrap',
+                              flex: { xs: 1, sm: 'none' }
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                        )}
+                      </Box>
                     </Box>
                   </LocalizationProvider>
                   
@@ -444,7 +499,10 @@ const Home = () => {
                                 <IconButton 
                                   edge="end" 
                                   aria-label="delete"
-                                  onClick={() => handleDeleteTime(quizTime._id)}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteClick(quizTime);
+                                  }}
                                   size="small"
                                 >
                                   <DeleteIcon fontSize="small" />
@@ -475,10 +533,6 @@ const Home = () => {
                 </div>
               )}
 
-              <div className="card">
-                <h3>Recent Activity</h3>
-                <p style={{color:"initial"}}>No recent activity</p>
-              </div>
             </div>
           ) : (
             <div className="game-mode-options">
@@ -568,6 +622,35 @@ const Home = () => {
           )}
         </div>
       </div>
+      
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={() => setDeleteDialogOpen(false)}
+        aria-labelledby="alert-dialog-title"
+        aria-describedby="alert-dialog-description"
+      >
+        <DialogTitle id="alert-dialog-title">
+          Delete Quiz Time
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText id="alert-dialog-description">
+            Are you sure you want to delete the quiz time at {timeToDelete?.time ? 
+              new Date(`2000-01-01T${timeToDelete.time}`).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 
+              ''}?
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
+          <Button 
+            onClick={() => timeToDelete && handleDeleteTime(timeToDelete._id)}
+            color="error"
+            autoFocus
+          >
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
       
       <Snackbar
         open={snackbar.open}

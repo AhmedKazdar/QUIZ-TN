@@ -10,21 +10,40 @@
   --border-radius: 8px;
   --box-shadow: 0 2px 15px rgba(0, 0, 0, 0.1);
   --transition: all 0.3s ease;
+  --sidebar-width: 250px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 16px;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 .app-container {
   display: flex;
+  flex-direction: column;
   min-height: 100vh;
   background-color: #f0f2f5;
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  position: relative;
 }
 
 .main-content {
   flex: 1;
-  padding: 2rem;
-  margin-left: 250px;
+  padding: 1rem;
+  margin-left: 0;
+  width: 100%;
   transition: var(--transition);
-  width: calc(100% - 250px);
   background-color: #f0f2f5;
 }
 
@@ -37,6 +56,7 @@
   max-width: 1000px;
   margin: 0 auto;
   transition: var(--transition);
+  width: 100%;
 }
 
 .profile-card {
@@ -56,23 +76,23 @@
 .profile-header {
   background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
   color: white;
-  padding: 2.5rem 2rem;
+  padding: 1.5rem 1rem;
   text-align: center;
   position: relative;
-  margin-bottom: 1.5rem;
+  margin-bottom: 1rem;
 }
 
 .profile-avatar {
-  width: 120px;
-  height: 120px;
+  width: 100px;
+  height: 100px;
   background: rgba(255, 255, 255, 0.2);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 3.5rem;
+  font-size: 2.5rem;
   font-weight: 700;
-  margin: 0 auto 1.5rem;
+  margin: 0 auto 1rem;
   border: 4px solid rgba(255, 255, 255, 0.4);
   transition: var(--transition);
   text-transform: uppercase;
@@ -127,13 +147,14 @@
 }
 
 .profile-details {
-  padding: 0 2rem 1.5rem;
+  padding: 0 1rem 1rem;
 }
 
 .detail-item {
   display: flex;
-  align-items: center;
-  padding: 1.25rem 0;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 1rem 0;
   border-bottom: 1px solid rgba(0, 0, 0, 0.05);
   transition: var(--transition);
 }
@@ -148,17 +169,18 @@
 }
 
 .detail-icon {
-  font-size: 1.3rem;
+  font-size: 1.1rem;
   color: var(--primary);
-  margin-right: 1.25rem;
-  width: 36px;
-  height: 36px;
+  margin-right: 0.75rem;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   background: rgba(74, 108, 247, 0.1);
   display: flex;
   align-items: center;
   justify-content: center;
   transition: var(--transition);
+  flex-shrink: 0;
 }
 
 .detail-item:hover .detail-icon {
@@ -186,9 +208,10 @@
 
 .profile-stats {
   display: flex;
+  flex-wrap: wrap;
   background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
   border-top: 1px solid rgba(0, 0, 0, 0.05);
-  padding: 1.75rem 2rem;
+  padding: 1rem;
   margin-top: 1rem;
 }
 
@@ -489,6 +512,118 @@
   align-items: center;
   justify-content: center;
   min-height: 300px;
+}
+
+/* Responsive Styles */
+@media (min-width: 576px) {
+  .main-content {
+    padding: 1.5rem;
+  }
+  
+  .profile-header {
+    padding: 2rem 1.5rem;
+  }
+  
+  .profile-avatar {
+    width: 120px;
+    height: 120px;
+    font-size: 3rem;
+  }
+  
+  .profile-details {
+    padding: 0 1.5rem 1.5rem;
+  }
+  
+  .detail-item {
+    flex-direction: row;
+    align-items: center;
+  }
+}
+
+@media (min-width: 768px) {
+  .app-container {
+    flex-direction: row;
+  }
+  
+  .main-content {
+    margin-left: var(--sidebar-width);
+    width: calc(100% - var(--sidebar-width));
+    padding: 2rem;
+  }
+  
+  .profile-header {
+    padding: 2.5rem 2rem;
+  }
+  
+  .profile-avatar {
+    width: 140px;
+    height: 140px;
+    font-size: 3.5rem;
+  }
+  
+  .profile-details {
+    padding: 0 2rem 2rem;
+  }
+}
+
+/* Small devices (phones, 576px and up) */
+@media (min-width: 576px) and (max-width: 767.98px) {
+  .profile-stats {
+    justify-content: space-around;
+  }
+  
+  .stat-item {
+    flex: 0 0 45%;
+    margin-bottom: 1rem;
+  }
+}
+
+/* Extra small devices (portrait phones, less than 576px) */
+@media (max-width: 575.98px) {
+  .profile-stats {
+    flex-direction: column;
+    align-items: center;
+  }
+  
+  .stat-item {
+    width: 100%;
+    max-width: 200px;
+    margin-bottom: 1rem;
+    padding: 0.5rem;
+  }
+  
+  .stat-item:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    bottom: -8px;
+    left: 25%;
+    right: 25%;
+    height: 1px;
+    background-color: rgba(0, 0, 0, 0.1);
+  }
+  
+  .username-edit-input {
+    flex-direction: column;
+    gap: 0.5rem;
+    width: 100%;
+  }
+  
+  .username-input {
+    width: 100%;
+    margin: 0;
+  }
+}
+
+/* For tablets and larger devices */
+@media (min-width: 768px) {
+  .profile-stats {
+    justify-content: space-between;
+  }
+  
+  .stat-item {
+    flex: 1;
+    padding: 0 1rem;
+  }
 }
 
 .profile-container.error {

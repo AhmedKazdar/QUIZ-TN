@@ -1,3 +1,4 @@
+/* Base Styles */
 input:-webkit-autofill,
 input:-webkit-autofill:hover,
 input:-webkit-autofill:focus,
@@ -8,36 +9,61 @@ input:-webkit-autofill:active {
   color: #000 !important;
   transition: background-color 5000s ease-in-out 0s;
 }
+
+:root {
+  --primary-color: #4caf50;
+  --secondary-color: #f4f4f9;
+  --hover-color: #e0f7fa;
+  --text-color: #333;
+  --border-color: #ddd;
+  --error-color: #f44336;
+  --success-color: #4caf50;
+  --transition: all 0.3s ease;
+}
+
 /* Container */
 .responses-container {
-  padding: 20px;
-  background-color: #f4f4f9;
+  padding: 15px;
+  background-color: var(--secondary-color);
   border-radius: 8px;
+  margin: 0 auto;
+  max-width: 100%;
+  overflow-x: auto;
+  box-sizing: border-box;
 }
 
 /* Header */
 .responses-header {
   text-align: center;
-  color: #4caf50;
+  color: var(--primary-color);
+  margin-bottom: 20px;
+  font-size: 1.5rem;
 }
 
-/* Table */
+/* Table Styles */
 .responses-table {
   width: 100%;
   border-collapse: collapse;
-  margin-top: 20px;
+  margin: 20px 0;
+  font-size: 0.9rem;
+  min-width: 600px; /* Ensures table is scrollable on mobile */
 }
 
 .responses-table th,
 .responses-table td {
-  border: 1px solid #ddd;
-  padding: 12px;
+  border: 1px solid var(--border-color);
+  padding: 12px 8px;
   text-align: center;
+  word-break: break-word;
 }
 
 .responses-table th {
-  background-color: #4caf50;
+  background-color: var(--primary-color);
   color: white;
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
 .responses-table tr:nth-child(even) {
@@ -45,24 +71,29 @@ input:-webkit-autofill:active {
 }
 
 .responses-table tr:hover {
-  background-color: #e0f7fa;
+  background-color: var(--hover-color);
+  transition: var(--transition);
 }
 
 /* Badges */
-.badge-correct {
-  color: white;
-  background-color: #4caf50;
-  padding: 5px 10px;
+.badge {
+  display: inline-block;
+  padding: 4px 10px;
   border-radius: 12px;
-  font-weight: bold;
+  font-weight: 500;
+  font-size: 0.8rem;
+  min-width: 70px;
+  text-align: center;
+}
+
+.badge-correct {
+  background-color: var(--success-color);
+  color: white;
 }
 
 .badge-wrong {
+  background-color: var(--error-color);
   color: white;
-  background-color: #f44336;
-  padding: 5px 10px;
-  border-radius: 12px;
-  font-weight: bold;
 }
 
 /* Pagination */
@@ -70,33 +101,237 @@ input:-webkit-autofill:active {
   display: flex;
   justify-content: center;
   align-items: center;
-  margin-top: 20px;
+  margin: 25px 0;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .pagination button {
-  margin: 0 10px;
+  margin: 0 5px;
+  min-width: 36px;
+  height: 36px;
+  padding: 0;
 }
 
-/* Centered Buttons */
+/* Buttons */
 .centered-button {
-  margin-top: 20px;
+  margin: 20px auto;
   display: block;
-  margin-left: auto;
-  margin-right: auto;
+  width: auto;
+  max-width: 200px;
 }
 
 /* Modal Form */
 .modal-box {
-  width: 400px;
-  margin: 50px auto;
+  width: 90%;
+  max-width: 400px;
+  margin: 20px auto;
   background-color: white;
   padding: 20px;
   border-radius: 8px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
-/* New Response Fields */
+/* Form Fields */
 .response-field {
   margin-bottom: 20px;
+  width: 100%;
+}
+
+/* Responsive Table Container */
+.table-container {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 10px 0;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* Action Buttons */
+.action-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+/* Mobile Styles */
+@media (max-width: 767px) {
+  .responses-container {
+    padding: 8px;
+    margin: 0 -8px;
+    width: calc(100% + 16px);
+  }
+
+  .responses-header {
+    font-size: 1.2rem;
+    margin: 10px 0 12px;
+    padding: 0 8px;
+  }
+
+  .responses-table {
+    min-width: 100%;
+  }
+
+  .responses-table th,
+  .responses-table td {
+    padding: 6px 4px;
+    font-size: 0.8rem;
+    min-width: 60px;
+  }
+
+  .pagination {
+    flex-direction: column;
+    gap: 8px;
+    padding: 0 8px;
+  }
+
+  .pagination button {
+    margin: 2px 0;
+    min-width: 32px;
+    height: 32px;
+    padding: 0 8px;
+  }
+
+  .modal-box {
+    width: 95%;
+    max-width: 100%;
+    margin: 10px auto;
+    padding: 12px;
+  }
+
+  .action-buttons {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: center;
+  }
+
+  .action-buttons button {
+    min-width: 80px;
+    margin: 2px;
+    padding: 6px 8px;
+    font-size: 0.8rem;
+  }
+
+  /* Extra small devices (phones, 430px and down) */
+  @media (max-width: 430px) {
+    .responses-container {
+      padding: 6px 4px;
+      margin: 0 -4px;
+      width: calc(100% + 8px);
+    }
+
+    .responses-header {
+      font-size: 1.1rem;
+      margin: 8px 0 10px;
+    }
+
+    .responses-table th,
+    .responses-table td {
+      padding: 5px 3px;
+      font-size: 0.75rem;
+    }
+
+    .badge {
+      padding: 2px 6px;
+      font-size: 0.7rem;
+      min-width: 60px;
+    }
+
+    .pagination {
+      gap: 6px;
+    }
+
+    .pagination button {
+      min-width: 28px;
+      height: 28px;
+      font-size: 0.75rem;
+    }
+
+    .action-buttons {
+      gap: 4px;
+    }
+
+    .action-buttons button {
+      min-width: 70px;
+      padding: 4px 6px;
+      font-size: 0.75rem;
+    }
+
+    /* Stack table cells on very small screens */
+    @media (max-width: 360px) {
+      .responses-table {
+        display: block;
+      }
+
+      .responses-table thead {
+        display: none;
+      }
+
+      .responses-table tr {
+        display: block;
+        margin-bottom: 12px;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        overflow: hidden;
+      }
+
+      .responses-table td {
+        display: flex;
+        justify-content: space-between;
+        text-align: left;
+        padding: 6px 8px;
+        border: none;
+        border-bottom: 1px solid #eee;
+      }
+
+      .responses-table td:last-child {
+        border-bottom: none;
+      }
+
+      .responses-table td::before {
+        content: attr(data-label);
+        font-weight: 600;
+        margin-right: 10px;
+        color: #666;
+        flex: 0 0 100px;
+      }
+
+      .action-buttons {
+        justify-content: flex-start;
+        padding: 4px 0;
+      }
+    }
+  }
+}
+
+/* Small Mobile Devices */
+@media (max-width: 480px) {
+  .responses-container {
+    padding: 8px 5px;
+  }
+
+  .responses-table {
+    font-size: 0.8rem;
+  }
+
+  .responses-table th,
+  .responses-table td {
+    padding: 6px 3px;
+  }
+
+  .badge {
+    padding: 3px 6px;
+    font-size: 0.75rem;
+    min-width: 60px;
+  }
+
+  .modal-box {
+    width: 98%;
+    padding: 10px;
+  }
 }
 
 .response-group {
