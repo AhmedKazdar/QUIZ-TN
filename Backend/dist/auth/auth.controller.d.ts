@@ -11,7 +11,7 @@ export declare class AuthController {
         username: string;
         email: string;
         phoneNumber: string;
-        role: string;
+        role: import("../user/user.schema").UserRole;
         access_token: string;
     }>;
     createAdminUser(createUserDto: CreateUserDto): Promise<{

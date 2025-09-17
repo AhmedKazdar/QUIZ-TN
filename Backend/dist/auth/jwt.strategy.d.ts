@@ -9,7 +9,7 @@ export declare class JwtStrategy extends JwtStrategy_base {
         username: string;
         email: string;
         phoneNumber: string;
-        role: string;
+        role: import("../user/user.schema").UserRole;
         sub: string;
     }>;
 }

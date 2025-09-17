@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { FaHome, FaQuestionCircle, FaClipboardList, FaSignOutAlt, FaUserPlus, FaUsers, FaUser, FaCog } from 'react-icons/fa';
+import { FaHome, FaQuestionCircle, FaClipboardList, FaSignOutAlt, FaUserPlus, FaUsers, FaUser, FaCog, FaTrophy } from 'react-icons/fa';
 import './SideBar.css';
 
 const SideBar = ({ username, role, isOpen = false, onLogout, onClose, onToggle }) => {
@@ -11,7 +11,8 @@ const SideBar = ({ username, role, isOpen = false, onLogout, onClose, onToggle }
   // Base menu items for all users
   const baseMenuItems = [
     { path: '/home', icon: <FaHome />, label: 'Home' },
-    { path: '/profile', icon: <FaUser />, label: 'My Profile' }
+  /*   { path: '/profile', icon: <FaUser />, label: 'My Profile' }, */
+   /*  { path: '/ranking', icon: <FaTrophy />, label: 'Ranking' } */
   ];
 
   // Additional menu items for non-user roles
@@ -21,9 +22,9 @@ const SideBar = ({ username, role, isOpen = false, onLogout, onClose, onToggle }
   ];
 
   // Combine menu items based on user role
-  const menuItems = role === 'user' 
-    ? baseMenuItems 
-    : [...baseMenuItems, ...additionalMenuItems];
+  const menuItems = role && role !== 'user'
+    ? [...baseMenuItems, ...additionalMenuItems]
+    : baseMenuItems;
 
   const adminItems = [
     { path: '/admin/users', icon: <FaUsers />, label: 'Users' },

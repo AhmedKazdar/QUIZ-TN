@@ -400,12 +400,6 @@ const Home = () => {
               <div className="card">
                 <h3>Quick Actions</h3>
                 <div className="quick-actions">
-                  <button 
-                    className="primary-btn"
-                    onClick={() => setShowModeOptions(true)}
-                  >
-                    Start New Game
-                  </button>
                   {role === 'admin' && (
                     <button 
                       className="secondary-btn"

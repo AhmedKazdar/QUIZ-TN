@@ -129,6 +129,61 @@ let ScoreService = class ScoreService {
             throw new common_1.InternalServerErrorException('Failed to fetch top rankings');
         }
     }
+    async getUserRank(userId) {
+        if (!mongoose_2.Types.ObjectId.isValid(userId)) {
+            throw new common_1.BadRequestException('Invalid userId format');
+        }
+        const scores = await this.scoreModel
+            .find()
+            .sort({ score: -1, updatedAt: 1 })
+            .exec();
+        const userIndex = scores.findIndex(score => score.userId.toString() === userId);
+        if (userIndex === -1) {
+            throw new common_1.NotFoundException('User score not found');
+        }
+        return {
+            rank: userIndex + 1,
+            totalUsers: scores.length
+        };
+    }
+    async getLeaderboard(page = 1, limit = 10) {
+        const skip = (page - 1) * limit;
+        const total = await this.scoreModel.countDocuments();
+        const totalPages = Math.ceil(total / limit);
+        const scores = await this.scoreModel.aggregate([
+            {
+                $lookup: {
+                    from: 'users',
+                    localField: 'userId',
+                    foreignField: '_id',
+                    as: 'user',
+                },
+            },
+            { $unwind: '$user' },
+            { $match: { 'user.role': user_schema_1.UserRole.USER } },
+            { $sort: { score: -1, updatedAt: 1 } },
+            { $skip: skip },
+            { $limit: limit },
+            {
+                $project: {
+                    _id: 0,
+                    userId: 1,
+                    username: '$user.username',
+                    score: '$score',
+                },
+            },
+        ]);
+        const leaderboard = scores.map((item, index) => ({
+            rank: skip + index + 1,
+            ...item,
+        }));
+        return {
+            leaderboard,
+            total,
+            page,
+            totalPages,
+        };
+    }
 };
 exports.ScoreService = ScoreService;
 exports.ScoreService = ScoreService = __decorate([

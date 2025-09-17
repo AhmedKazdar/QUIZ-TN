@@ -29,7 +29,7 @@ export declare class UserController {
             username: string;
             email: string | null | undefined;
             phoneNumber: string | undefined;
-            role: string;
+            role: import("./user.schema").UserRole;
         };
         token: string;
     }>;
@@ -70,7 +70,7 @@ export declare class UserController {
         username: string;
         email: string | null | undefined;
         phoneNumber: string | undefined;
-        role: string;
+        role: import("./user.schema").UserRole;
         isActive: boolean;
         lastActive: Date;
         createdAt: Date;

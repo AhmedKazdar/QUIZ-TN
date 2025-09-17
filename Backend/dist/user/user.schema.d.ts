@@ -1,10 +1,14 @@
 import mongoose, { Document } from 'mongoose';
+export declare enum UserRole {
+    USER = "user",
+    ADMIN = "admin"
+}
 export type UserDocument = User & Document;
 export declare class User {
     _id: mongoose.Types.ObjectId;
     username: string;
     password: string;
-    role: string;
+    role: UserRole;
     phoneNumber?: string;
     email?: string | null;
     createdAt: Date;

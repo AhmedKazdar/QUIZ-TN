@@ -14,6 +14,7 @@ import QuestionsTable from "./pages/Question/Question";
 import ResponsesPage from "./pages/Response/ResponsesPages";
 import UsersList from "./pages/UsersList/UsersList";
 import Profile from "./pages/Profile/Profile";
+import Ranking from "./pages/Ranking/Ranking";
 
 const router = createBrowserRouter(
   [
@@ -87,6 +88,14 @@ const router = createBrowserRouter(
       element: (
         <PrivateRoute>
           <Profile />
+        </PrivateRoute>
+      ),
+    },
+    {
+      path: "/ranking",
+      element: (
+        <PrivateRoute>
+          <Ranking />
         </PrivateRoute>
       ),
     },

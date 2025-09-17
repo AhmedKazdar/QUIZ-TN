@@ -16,7 +16,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ScoreController = void 0;
 const common_1 = require("@nestjs/common");
 const score_service_1 = require("./score.service");
+const score_schema_1 = require("./score.schema");
 const mongoose_1 = require("mongoose");
+const swagger_1 = require("@nestjs/swagger");
 let ScoreController = ScoreController_1 = class ScoreController {
     scoreService;
     logger = new common_1.Logger(ScoreController_1.name);
@@ -24,29 +26,78 @@ let ScoreController = ScoreController_1 = class ScoreController {
         this.scoreService = scoreService;
     }
     async calculateScore(userId) {
-        try {
-            if (!mongoose_1.Types.ObjectId.isValid(userId)) {
-                throw new common_1.BadRequestException('Invalid userId format');
-            }
-            const score = await this.scoreService.calculateScore(userId);
-            return score;
+        if (!mongoose_1.Types.ObjectId.isValid(userId)) {
+            throw new common_1.BadRequestException('Invalid userId format');
         }
-        catch (error) {
-            this.logger.error('calculateScore failed', error.stack);
-            throw error;
+        return this.scoreService.calculateScore(userId);
+    }
+    async getUserRank(userId) {
+        if (!mongoose_1.Types.ObjectId.isValid(userId)) {
+            throw new common_1.BadRequestException('Invalid userId format');
         }
+        return this.scoreService.getUserRank(userId);
+    }
+    async getLeaderboard(page = 1, limit = 10) {
+        if (page < 1)
+            page = 1;
+        if (limit < 1 || limit > 100)
+            limit = 10;
+        return this.scoreService.getLeaderboard(page, limit);
+    }
+    async getTopScores(limit = 10) {
+        if (limit < 1 || limit > 100)
+            limit = 10;
+        return this.scoreService.getTopRanking(limit);
     }
 };
 exports.ScoreController = ScoreController;
 __decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Calculate score for a user' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Score calculated successfully' }),
+    (0, swagger_1.ApiResponse)({ status: 400, description: 'Invalid user ID format' }),
+    (0, swagger_1.ApiResponse)({ status: 404, description: 'User not found' }),
     (0, common_1.Post)('calculate/:userId'),
     __param(0, (0, common_1.Param)('userId')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], ScoreController.prototype, "calculateScore", null);
+__decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Get user rank' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Returns user rank and total users' }),
+    (0, swagger_1.ApiResponse)({ status: 400, description: 'Invalid user ID format' }),
+    (0, swagger_1.ApiResponse)({ status: 404, description: 'User score not found' }),
+    (0, common_1.Get)('rank/:userId'),
+    __param(0, (0, common_1.Param)('userId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], ScoreController.prototype, "getUserRank", null);
+__decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Get leaderboard' }),
+    (0, swagger_1.ApiQuery)({ name: 'page', required: false, type: Number, description: 'Page number (1-based)' }),
+    (0, swagger_1.ApiQuery)({ name: 'limit', required: false, type: Number, description: 'Items per page' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Returns paginated leaderboard' }),
+    (0, common_1.Get)('leaderboard'),
+    __param(0, (0, common_1.Query)('page')),
+    __param(1, (0, common_1.Query)('limit')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number, Number]),
+    __metadata("design:returntype", Promise)
+], ScoreController.prototype, "getLeaderboard", null);
+__decorate([
+    (0, common_1.Get)('top'),
+    (0, swagger_1.ApiOperation)({ summary: 'Get top N scores' }),
+    (0, swagger_1.ApiQuery)({ name: 'limit', required: false, type: Number, description: 'Number of top scores to return' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Returns top scores', type: [score_schema_1.Score] }),
+    __param(0, (0, common_1.Query)('limit')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number]),
+    __metadata("design:returntype", Promise)
+], ScoreController.prototype, "getTopScores", null);
 exports.ScoreController = ScoreController = ScoreController_1 = __decorate([
-    (0, common_1.Controller)('score'),
+    (0, swagger_1.ApiTags)('scores'),
+    (0, common_1.Controller)('scores'),
     __metadata("design:paramtypes", [score_service_1.ScoreService])
 ], ScoreController);
 //# sourceMappingURL=score.controller.js.map

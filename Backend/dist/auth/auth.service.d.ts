@@ -13,7 +13,7 @@ export declare class AuthService {
         username: string;
         email: string;
         phoneNumber: string;
-        role: string;
+        role: import("../user/user.schema").UserRole;
         access_token: string;
     }>;
     verifyPhoneLogin(phoneNumber: string, otp: string): Promise<{

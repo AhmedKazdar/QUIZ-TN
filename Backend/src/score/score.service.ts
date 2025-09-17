@@ -5,10 +5,10 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { Model, Types, PipelineStage } from 'mongoose';
 import { Score } from './score.schema';
 import { ResponseDocument } from '../response/response.schema';
-import { User } from '../user/user.schema';
+import { User, UserRole } from '../user/user.schema';
 
 @Injectable()
 export class ScoreService {
@@ -154,5 +154,96 @@ export class ScoreService {
       console.error('Error fetching top rankings:', error.message, error.stack);
       throw new InternalServerErrorException('Failed to fetch top rankings');
     }
+  }
+
+  /**
+   * Get user's rank based on their score
+   * @param userId User ID to get rank for
+   * @returns The user's rank and total number of ranked users
+   */
+  async getUserRank(userId: string): Promise<{ rank: number; totalUsers: number }> {
+    if (!Types.ObjectId.isValid(userId)) {
+      throw new BadRequestException('Invalid userId format');
+    }
+
+    // Get all scores sorted in descending order
+    const scores = await this.scoreModel
+      .find()
+      .sort({ score: -1, updatedAt: 1 }) // Sort by score (desc) and then by timestamp (asc)
+      .exec();
+
+    // Find the user's rank
+    const userIndex = scores.findIndex(score => score.userId.toString() === userId);
+    
+    if (userIndex === -1) {
+      throw new NotFoundException('User score not found');
+    }
+
+    return {
+      rank: userIndex + 1, // Rank is 1-based index
+      totalUsers: scores.length
+    };
+  }
+
+  /**
+   * Get leaderboard with pagination
+   * @param page Page number (1-based)
+   * @param limit Number of records per page
+   * @returns Paginated leaderboard data
+   */
+  async getLeaderboard(page: number = 1, limit: number = 10): Promise<{
+    leaderboard: Array<{
+      rank: number;
+      userId: Types.ObjectId;
+      username: string;
+      score: number;
+    }>;
+    total: number;
+    page: number;
+    totalPages: number;
+  }> {
+    const skip = (page - 1) * limit;
+
+    // Get total count of users with scores
+    const total = await this.scoreModel.countDocuments();
+    const totalPages = Math.ceil(total / limit);
+
+    // Get paginated scores with user data
+    const scores = await this.scoreModel.aggregate([
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'userId',
+          foreignField: '_id',
+          as: 'user',
+        },
+      },
+      { $unwind: '$user' },
+      { $match: { 'user.role': UserRole.USER } }, // Only include regular users, not admins
+      { $sort: { score: -1, updatedAt: 1 } }, // Consistent sort order
+      { $skip: skip },
+      { $limit: limit },
+      {
+        $project: {
+          _id: 0,
+          userId: 1,
+          username: '$user.username',
+          score: '$score',
+        },
+      },
+    ]);
+
+    // Add ranks
+    const leaderboard = scores.map((item, index) => ({
+      rank: skip + index + 1,
+      ...item,
+    }));
+
+    return {
+      leaderboard,
+      total,
+      page,
+      totalPages,
+    };
   }
 }

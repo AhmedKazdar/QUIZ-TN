@@ -9,9 +9,14 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.UserSchema = exports.User = void 0;
+exports.UserSchema = exports.User = exports.UserRole = void 0;
 const mongoose_1 = require("@nestjs/mongoose");
 const mongoose_2 = require("mongoose");
+var UserRole;
+(function (UserRole) {
+    UserRole["USER"] = "user";
+    UserRole["ADMIN"] = "admin";
+})(UserRole || (exports.UserRole = UserRole = {}));
 let User = class User {
     _id;
     username;
@@ -36,7 +41,11 @@ __decorate([
     __metadata("design:type", String)
 ], User.prototype, "password", void 0);
 __decorate([
-    (0, mongoose_1.Prop)({ required: false, default: 'user' }),
+    (0, mongoose_1.Prop)({
+        type: String,
+        enum: Object.values(UserRole),
+        default: UserRole.USER
+    }),
     __metadata("design:type", String)
 ], User.prototype, "role", void 0);
 __decorate([
