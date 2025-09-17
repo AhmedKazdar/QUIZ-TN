@@ -2,6 +2,7 @@ import { Model } from 'mongoose';
 import { JwtService } from '@nestjs/jwt';
 import { User, UserDocument } from './user.schema';
 import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
 import { LoginDto } from './dto/login.dto';
 import { InfobipOtpService } from '../infobip-otp/infobip-otp.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
@@ -40,7 +41,7 @@ export declare class UserService {
     changePassword(userId: string, changePasswordDto: ChangePasswordDto): Promise<{
         message: string;
     }>;
-    updateUser(id: string, updateUserDto: CreateUserDto): Promise<UserDocument>;
+    updateUser(id: string, updateUserDto: UpdateUserDto): Promise<UserDocument>;
     deleteUser(id: string): Promise<{
         message: string;
     }>;

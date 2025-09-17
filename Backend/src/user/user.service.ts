@@ -12,6 +12,7 @@ import { JwtService } from '@nestjs/jwt';
 import { User, UserDocument } from './user.schema';
 import { UserRole } from './entities/user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
 import { LoginDto } from './dto/login.dto';
 import * as bcrypt from 'bcryptjs';
 import { InfobipOtpService } from '../infobip-otp/infobip-otp.service';
@@ -323,24 +324,29 @@ export class UserService {
 
   async updateUser(
     id: string,
-    updateUserDto: CreateUserDto,
+    updateUserDto: UpdateUserDto,
   ): Promise<UserDocument> {
-    const hashedPassword = updateUserDto.password
-      ? await bcrypt.hash(updateUserDto.password, 10)
-      : undefined;
+    const updateData: any = {
+      lastActive: new Date(),
+    };
+
+    // Only include fields that are provided in the DTO
+    if (updateUserDto.username !== undefined) {
+      updateData.username = updateUserDto.username;
+    }
+    if (updateUserDto.email !== undefined) {
+      updateData.email = updateUserDto.email;
+    }
+    if (updateUserDto.phoneNumber !== undefined) {
+      updateData.phoneNumber = updateUserDto.phoneNumber;
+    }
+    if (updateUserDto.role !== undefined) {
+      updateData.role = updateUserDto.role;
+    }
+
     const updatedUser = await this.userModel
-      .findByIdAndUpdate(
-        id,
-        {
-          phoneNumber: updateUserDto.phoneNumber,
-          username: updateUserDto.username,
-          role: updateUserDto.role,
-          email: updateUserDto.email,
-          password: hashedPassword,
-          lastActive: new Date(),
-        },
-        { new: true },
-      )
+      .findByIdAndUpdate(id, updateData, { new: true })
+      .select('-password -refreshToken') // Don't return sensitive data
       .exec();
 
     if (!updatedUser) {

@@ -246,18 +246,24 @@ let UserService = class UserService {
         return { message: 'Password updated successfully' };
     }
     async updateUser(id, updateUserDto) {
-        const hashedPassword = updateUserDto.password
-            ? await bcrypt.hash(updateUserDto.password, 10)
-            : undefined;
-        const updatedUser = await this.userModel
-            .findByIdAndUpdate(id, {
-            phoneNumber: updateUserDto.phoneNumber,
-            username: updateUserDto.username,
-            role: updateUserDto.role,
-            email: updateUserDto.email,
-            password: hashedPassword,
+        const updateData = {
             lastActive: new Date(),
-        }, { new: true })
+        };
+        if (updateUserDto.username !== undefined) {
+            updateData.username = updateUserDto.username;
+        }
+        if (updateUserDto.email !== undefined) {
+            updateData.email = updateUserDto.email;
+        }
+        if (updateUserDto.phoneNumber !== undefined) {
+            updateData.phoneNumber = updateUserDto.phoneNumber;
+        }
+        if (updateUserDto.role !== undefined) {
+            updateData.role = updateUserDto.role;
+        }
+        const updatedUser = await this.userModel
+            .findByIdAndUpdate(id, updateData, { new: true })
+            .select('-password -refreshToken')
             .exec();
         if (!updatedUser) {
             throw new common_1.UnauthorizedException('User not found');

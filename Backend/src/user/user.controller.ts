@@ -21,6 +21,7 @@ import { AuthService } from '../auth/auth.service';
 import { InfobipOtpService } from '../infobip-otp/infobip-otp.service';
 import { JwtService } from '@nestjs/jwt';
 import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
 import { LoginDto } from './dto/login.dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { Request as ExpressRequest } from 'express';
@@ -265,7 +266,7 @@ export class UserController {
   @ApiBadRequestResponse({ description: 'Invalid data provided' })
   async updateUser(
     @Param('id') id: string,
-    @Body() updateUserDto: CreateUserDto
+    @Body() updateUserDto: UpdateUserDto
   ): Promise<{ message: string; user: any }> {
     try {
       if (updateUserDto.phoneNumber) {

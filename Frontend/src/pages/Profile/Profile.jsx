@@ -47,9 +47,27 @@ const Profile = () => {
     fetchUserProfile();
   }, [navigate]);
 
+  const validateUsername = (username) => {
+    if (!username.trim()) {
+      return 'Username cannot be empty';
+    }
+    if (username.length < 3) {
+      return 'Username must be at least 3 characters long';
+    }
+    if (username.length > 30) {
+      return 'Username cannot be longer than 30 characters';
+    }
+    if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+      return 'Username can only contain letters, numbers, and underscores';
+    }
+    return null;
+  };
+
   const handleUpdateUsername = async () => {
-    if (!newUsername.trim()) {
-      toast.error('Username cannot be empty');
+    // Validate username
+    const validationError = validateUsername(newUsername);
+    if (validationError) {
+      toast.error(validationError);
       return;
     }
 
@@ -63,10 +81,28 @@ const Profile = () => {
       setLoading(true);
       const token = localStorage.getItem('token');
       
-      // Call the backend API to update the username
+      if (!token) {
+        throw new Error('No authentication token found');
+      }
+      
+      if (!user?._id) {
+        throw new Error('User ID is missing');
+      }
+      
+      console.log('Attempting to update username to:', newUsername);
+      
+      // Prepare the update data with all required fields
+      const updateData = {
+        username: newUsername,
+        email: user.email,        // Include email as it's required
+        phoneNumber: user.phoneNumber, // Include phoneNumber as it's required
+        role: user.role || 'user' // Include role with a default value
+      };
+      
+      // Call the backend API to update the user
       const response = await axios.put(
-        `http://localhost:3001/api/users/update/${user._id}`,
-        { username: newUsername },
+        `${import.meta.env.VITE_API_URL}/api/users/update/${user._id}`,
+        updateData,
         {
           headers: {
             'Content-Type': 'application/json',
@@ -75,6 +111,8 @@ const Profile = () => {
         }
       );
 
+      console.log('Update response:', response.data);
+      
       // Update the user state with the new username
       setUser(prevUser => ({
         ...prevUser,
@@ -96,8 +134,23 @@ const Profile = () => {
       if (err.response) {
         // The request was made and the server responded with a status code
         // that falls out of the range of 2xx
+        console.log('Full error response:', JSON.stringify(err.response, null, 2));
+      
         if (err.response.status === 400) {
-          errorMessage = err.response.data.message || 'Invalid username format';
+          // Log the full error response for debugging
+          if (err.response.data && err.response.data.message) {
+            if (Array.isArray(err.response.data.message)) {
+              // Join all validation messages
+              errorMessage = err.response.data.message.join('. ');
+            } else if (typeof err.response.data.message === 'string') {
+              errorMessage = err.response.data.message;
+            }
+          }
+          
+          // Log the specific validation errors
+          if (err.response.data.message && Array.isArray(err.response.data.message)) {
+            console.error('Validation errors:', err.response.data.message);
+          }
         } else if (err.response.status === 401) {
           errorMessage = 'Please log in again';
           localStorage.removeItem('token');
@@ -162,13 +215,33 @@ const Profile = () => {
               <div className="username-edit-container">
                 {editing ? (
                   <div className="username-edit-input">
-                    <input
-                      type="text"
-                      value={newUsername}
-                      onChange={(e) => setNewUsername(e.target.value)}
-                      className="username-input"
-                      autoFocus
-                    />
+                    <div className="input-container">
+                      <input
+                        type="text"
+                        value={newUsername}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setNewUsername(value);
+                          // Show validation error as user types
+                          const error = validateUsername(value);
+                          if (error) {
+                            e.target.setCustomValidity(error);
+                          } else {
+                            e.target.setCustomValidity('');
+                          }
+                        }}
+                        className={`username-input ${newUsername && validateUsername(newUsername) ? 'input-error' : ''}`}
+                        autoFocus
+                        maxLength={30}
+                        pattern="^[a-zA-Z0-9_]+$"
+                        title="Username can only contain letters, numbers, and underscores"
+                      />
+                      {newUsername && validateUsername(newUsername) && (
+                        <div className="error-message">
+                          {validateUsername(newUsername)}
+                        </div>
+                      )}
+                    </div>
                     <button 
                       onClick={handleUpdateUsername} 
                       className="btn-icon btn-success"

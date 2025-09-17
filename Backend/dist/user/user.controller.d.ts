@@ -3,6 +3,7 @@ import { AuthService } from '../auth/auth.service';
 import { InfobipOtpService } from '../infobip-otp/infobip-otp.service';
 import { JwtService } from '@nestjs/jwt';
 import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
 import { LoginDto } from './dto/login.dto';
 import { OnlineGateway } from 'src/gateways/online.gateway';
 export declare class UserController {
@@ -51,7 +52,7 @@ export declare class UserController {
         userId: string;
     }>;
     getCurrentUser(req: any): Promise<any>;
-    updateUser(id: string, updateUserDto: CreateUserDto): Promise<{
+    updateUser(id: string, updateUserDto: UpdateUserDto): Promise<{
         message: string;
         user: any;
     }>;

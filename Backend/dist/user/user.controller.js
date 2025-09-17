@@ -21,6 +21,7 @@ const auth_service_1 = require("../auth/auth.service");
 const infobip_otp_service_1 = require("../infobip-otp/infobip-otp.service");
 const jwt_1 = require("@nestjs/jwt");
 const create_user_dto_1 = require("./dto/create-user.dto");
+const update_user_dto_1 = require("./dto/update-user.dto");
 const login_dto_1 = require("./dto/login.dto");
 const jwt_auth_guard_1 = require("./jwt-auth.guard");
 const bcrypt = require("bcrypt");
@@ -342,7 +343,7 @@ __decorate([
     __param(0, (0, common_1.Param)('id')),
     __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, create_user_dto_1.CreateUserDto]),
+    __metadata("design:paramtypes", [String, update_user_dto_1.UpdateUserDto]),
     __metadata("design:returntype", Promise)
 ], UserController.prototype, "updateUser", null);
 __decorate([
