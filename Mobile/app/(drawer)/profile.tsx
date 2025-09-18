@@ -12,7 +12,7 @@ import * as SecureStore from "expo-secure-store";
 import axios from "axios";
 import { router } from "expo-router";
 
-const API_URL = "http://192.168.1.115:3001";
+const API_URL = "http://192.168.1.153:3001";
 
 export default function ProfileScreen() {
   const [user, setUser] = useState<{

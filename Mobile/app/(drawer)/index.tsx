@@ -39,7 +39,7 @@ import {
   onOnlineUsers,
 } from "../../services/sockets";
 
-const API_URL = "http://192.168.1.115:3001";
+const API_URL = "http://192.168.1.153:3001";
 const { width, height } = Dimensions.get("window");
 
 export default function HomeScreen() {
@@ -121,7 +121,7 @@ export default function HomeScreen() {
       if (!token) {
         setError("No authentication token found.");
         setLoading(false);
-        router.replace("/login");
+        router.replace("/register");
         return;
       }
 
@@ -132,7 +132,7 @@ export default function HomeScreen() {
         if (decodedToken.exp < currentTime) {
           setError("Session expired, please log in again.");
           setLoading(false);
-          router.replace("/login");
+          router.replace("/register");
           return;
         }
 
@@ -170,7 +170,7 @@ export default function HomeScreen() {
         console.error("Token decode error:", err);
         setError("Invalid token.");
         setOnlineUsers([]);
-        router.replace("/login");
+        router.replace("/register");
       }
 
       setLoading(false);

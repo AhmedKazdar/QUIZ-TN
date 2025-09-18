@@ -13,6 +13,7 @@ import { InfobipOtpModule } from './infobip-otp/infobip-otp.module';
 import { WebhookModule } from './webhook/webhook.module';
 import { HealthController } from './health/health.controller';
 import { QuizTimeModule } from './quiz-time/quiz-time.module';
+import { PlayerModule } from './player/player.module';
 
 @Module({
   controllers: [HealthController],
@@ -38,6 +39,7 @@ import { QuizTimeModule } from './quiz-time/quiz-time.module';
     InfobipOtpModule,
     WebhookModule,
     QuizTimeModule,
+    PlayerModule,
   ],
   providers: [OnlineGateway],
 })

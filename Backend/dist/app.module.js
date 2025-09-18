@@ -22,6 +22,7 @@ const infobip_otp_module_1 = require("./infobip-otp/infobip-otp.module");
 const webhook_module_1 = require("./webhook/webhook.module");
 const health_controller_1 = require("./health/health.controller");
 const quiz_time_module_1 = require("./quiz-time/quiz-time.module");
+const player_module_1 = require("./player/player.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -50,6 +51,7 @@ exports.AppModule = AppModule = __decorate([
             infobip_otp_module_1.InfobipOtpModule,
             webhook_module_1.WebhookModule,
             quiz_time_module_1.QuizTimeModule,
+            player_module_1.PlayerModule,
         ],
         providers: [online_gateway_1.OnlineGateway],
     })

@@ -4,7 +4,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 
 const API_URL =
-  Constants.expoConfig?.extra?.API_URL || "http://192.168.1.115:3001";
+  Constants.expoConfig?.extra?.API_URL || "http://192.168.1.153:3001";
 
 let socket = null;
 

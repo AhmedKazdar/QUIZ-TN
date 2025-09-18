@@ -7,8 +7,7 @@ export default function OnboardingScreen() {
   const router = useRouter();
 
   const handleFinish = () => {
-    // Skip AsyncStorage for now
-    router.replace("/login"); //
+    router.replace("/register");
   };
 
   return (

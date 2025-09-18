@@ -1,5 +1,5 @@
 import { useRouter, useLocalSearchParams } from "expo-router";
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -9,13 +9,18 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as SecureStore from "expo-secure-store";
 
-const API_URL = "http://192.168.1.115:3001";
+const API_URL = "http://192.168.1.153:3001";
+
+interface RegisterData {
+  username: string;
+  phoneNumber: string;
+}
 
 export default function OtpVerificationScreen() {
   const router = useRouter();
@@ -23,81 +28,181 @@ export default function OtpVerificationScreen() {
     phoneNumber: string;
     flow: "login" | "register";
   }>();
-  const [otp, setOtp] = useState("");
-  const [loading, setLoading] = useState(false);
+  
+  const [otp, setOtp] = useState(["", "", "", ""]);
+  const [loading, setLoading] = useState(true);
+  const [resendLoading, setResendLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const textInputRef = useRef<TextInput>(null);
+  const [registerData, setRegisterData] = useState<RegisterData | null>(null);
+  const [countdown, setCountdown] = useState(60);
+  const [checkingAuth, setCheckingAuth] = useState(true);
+  const inputRefs = [
+    useRef<TextInput>(null),
+    useRef<TextInput>(null),
+    useRef<TextInput>(null),
+    useRef<TextInput>(null),
+  ];
 
+  // Check if user is already logged in
   useEffect(() => {
-    console.log("Focusing TextInput");
-    textInputRef.current?.focus();
-  }, []);
+    const checkAuth = async () => {
+      try {
+        const token = await AsyncStorage.getItem('token');
+        const username = await AsyncStorage.getItem('username');
+        
+        if (token && username) {
+          // User is already logged in, redirect to home
+          router.replace('/(drawer)');
+          return;
+        }
+        
+        // Load registration data if it's a registration flow
+        if (flow === "register") {
+          const data = await AsyncStorage.getItem("registerData");
+          if (data) {
+            setRegisterData(JSON.parse(data));
+          }
+        }
+        
+        // Auto-focus the first input
+        inputRefs[0].current?.focus();
+      } catch (error) {
+        console.error('Error checking auth status:', error);
+      } finally {
+        setCheckingAuth(false);
+        setLoading(false);
+      }
+    };
+
+    checkAuth();
+    
+    // Countdown timer for resend OTP
+    const timer = setInterval(() => {
+      setCountdown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    
+    return () => clearInterval(timer);
+  }, [flow]);
+
+  if (checkingAuth) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#3B82F6" />
+      </View>
+    );
+  }
+
+  const handleOtpChange = (text: string, index: number) => {
+    if (error) setError(null);
+    
+    // Only allow numbers
+    const numericValue = text.replace(/[^0-9]/g, '');
+    
+    // Update the OTP array
+    const newOtp = [...otp];
+    newOtp[index] = numericValue.slice(-1); // Only take the last character
+    setOtp(newOtp);
+    
+    // Auto-focus next input or submit if last input
+    if (numericValue && index < 3) {
+      inputRefs[index + 1]?.current?.focus();
+    } else if (index === 3 && numericValue) {
+      // If last input, blur the keyboard
+      inputRefs[index]?.current?.blur();
+    }
+  };
+
+  const handleKeyPress = (e: { nativeEvent: { key: string } }, index: number) => {
+    // Handle backspace
+    if (e.nativeEvent.key === 'Backspace' && !otp[index] && index > 0) {
+      inputRefs[index - 1].current?.focus();
+    }
+  };
 
   const handleVerifyOtp = async () => {
-    if (!otp) {
-      setError("Please enter the OTP.");
-      Alert.alert("Verification Failed", "Please enter the OTP.");
+    const otpCode = otp.join('');
+    
+    if (otpCode.length !== 4) {
+      setError("Please enter a valid 4-digit OTP");
       return;
     }
 
     setLoading(true);
     setError(null);
+
     try {
-      const endpoint =
-        flow === "login"
-          ? "/users/login/phone/verify"
-          : "/users/register/verify";
-      const response = await axios.post(`${API_URL}${endpoint}`, {
-        phoneNumber,
-        otp,
-        createUserDto:
-          flow === "register" ? { phoneNumber, username: "temp" } : undefined,
-      });
-      await AsyncStorage.setItem("token", response.data.access_token);
-      await SecureStore.setItemAsync("userId", response.data.userId);
-      if (flow === "login") {
-        await AsyncStorage.setItem("username", response.data.username);
-        Alert.alert("Success", "Login successful!");
-        router.replace("/(drawer)");
-      } else {
-        Alert.alert("Success", "OTP verified! Choose your username.");
-        router.push({
-          pathname: "/username" as const,
-          params: { phoneNumber },
+      let response;
+      
+      if (flow === "register" && registerData) {
+        // Verify OTP for registration against Player API
+        response = await axios.post(`${API_URL}/api/player/verify-otp`, {
+          phoneNumber: registerData.phoneNumber,
+          otp: otpCode,
+          username: registerData.username,
         });
+
+        // Store user data from response
+        await AsyncStorage.setItem("token", response.data.token);
+        await AsyncStorage.setItem("username", response.data.player?.username || registerData.username);
+        await AsyncStorage.setItem("userRole", "user");
+        await AsyncStorage.removeItem("registerData");
+        
+      } else if (flow === "login") {
+        // For now reuse the same endpoint assuming phone login flow
+        response = await axios.post(`${API_URL}/api/player/verify-otp`, {
+          phoneNumber,
+          otp: otpCode,
+        });
+
+        // Store user data
+        await AsyncStorage.setItem("token", response.data.token);
+        await AsyncStorage.setItem("username", response.data.player?.username || "");
+        await AsyncStorage.setItem("userRole", "user");
       }
+      
+      // Navigate to home screen after successful verification
+      router.replace("/(drawer)");
     } catch (error: any) {
-      const message =
-        error.response?.data?.message ||
-        error.message ||
-        "OTP verification failed";
-      console.error("Verify OTP error:", message);
+      const message = 
+        error.response?.data?.message || 
+        error.message || 
+        "Failed to verify OTP. Please try again.";
+      console.error("OTP verification error:", message);
       setError(message);
-      Alert.alert("Error", message);
     } finally {
       setLoading(false);
     }
   };
 
   const handleResendOtp = async () => {
-    setLoading(true);
+    if (countdown > 0) return;
+    
+    setResendLoading(true);
     setError(null);
+    
     try {
-      const endpoint =
-        flow === "login" ? "/users/login/phone" : "/users/register";
-      const response = await axios.post(`${API_URL}${endpoint}`, {
-        phoneNumber,
+      const phone = flow === "register" ? registerData?.phoneNumber : phoneNumber;
+      
+      if (!phone) {
+        throw new Error("Phone number is required");
+      }
+      
+      // Reuse Player register endpoint to resend OTP
+      await axios.post(`${API_URL}/api/player/register`, {
+        phoneNumber: phone,
       });
-      console.log("Resend OTP response:", response.data);
-      Alert.alert("Success", "OTP resent successfully.");
-      textInputRef.current?.focus();
+      
+      // Reset countdown
+      setCountdown(60);
+      Alert.alert("Success", "OTP has been resent to your phone number.");
     } catch (error: any) {
-      const message = error.response?.data?.message || "Failed to resend OTP.";
-      console.error("Resend OTP error:", message);
+      const message = 
+        error.response?.data?.message || 
+        error.message || 
+        "Failed to resend OTP. Please try again.";
       setError(message);
-      Alert.alert("Error", message);
     } finally {
-      setLoading(false);
+      setResendLoading(false);
     }
   };
 
@@ -105,60 +210,77 @@ export default function OtpVerificationScreen() {
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
     >
       <View style={styles.card}>
-        <Text style={styles.title}>Verify OTP</Text>
-        <Text style={styles.subtitle}>Enter the OTP sent to {phoneNumber}</Text>
+        <View style={styles.header}>
+          <Text style={styles.title}>Verify Your Phone</Text>
+          <Text style={styles.subtitle}>
+            We've sent a verification code to {flow === "register" ? registerData?.phoneNumber : phoneNumber}
+          </Text>
+        </View>
+
         {error && <Text style={styles.error}>{error}</Text>}
 
-        <View style={styles.inputContainer}>
-          <Ionicons name="key-outline" size={20} color="#555" />
-          <TextInput
-            ref={textInputRef}
-            style={styles.input}
-            placeholder="Enter OTP"
-            placeholderTextColor="black"
-            value={otp}
-            onChangeText={(text) => {
-              console.log("TextInput changed:", text);
-              setOtp(text.replace(/[^0-9]/g, ""));
-            }}
-            keyboardType="numeric"
-            maxLength={6}
-            editable={!loading}
-            autoFocus={true}
-            returnKeyType="done"
-            onSubmitEditing={handleVerifyOtp}
-            onFocus={() => console.log("TextInput focused")}
-            onBlur={() => console.log("TextInput blurred")}
-          />
+        <View style={styles.otpContainer}>
+          {otp.map((digit, index) => (
+            <TextInput
+              key={index}
+              ref={inputRefs[index]}
+              style={[styles.otpInput, error ? styles.errorInput : null]}
+              value={digit}
+              onChangeText={(text) => handleOtpChange(text, index)}
+              onKeyPress={(e) => handleKeyPress(e, index)}
+              keyboardType="number-pad"
+              maxLength={1}
+              selectTextOnFocus
+              editable={!loading}
+            />
+          ))}
         </View>
 
         <TouchableOpacity
           style={[styles.button, loading && styles.buttonDisabled]}
           onPress={handleVerifyOtp}
-          disabled={loading}
+          disabled={loading || otp.join('').length !== 4}
         >
-          <Text style={styles.buttonText}>
-            {loading ? "Verifying..." : "Verify OTP"}
+          {loading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.buttonText}>Verify OTP</Text>
+          )}
+        </TouchableOpacity>
+
+        <View style={styles.resendContainer}>
+          <Text style={styles.resendText}>
+            Didn't receive the code? 
           </Text>
-        </TouchableOpacity>
+          <TouchableOpacity 
+            onPress={handleResendOtp} 
+            disabled={countdown > 0 || resendLoading}
+          >
+            <Text 
+              style={[
+                styles.resendLink, 
+                (countdown > 0 || resendLoading) && styles.resendLinkDisabled
+              ]}
+            >
+              {resendLoading 
+                ? 'Sending...' 
+                : countdown > 0 
+                  ? `Resend in ${countdown}s` 
+                  : 'Resend Code'}
+            </Text>
+          </TouchableOpacity>
+        </View>
 
-        <TouchableOpacity
-          style={[styles.button, loading && styles.buttonDisabled]}
-          onPress={handleResendOtp}
+        <TouchableOpacity 
+          style={styles.backButton}
+          onPress={() => router.back()}
           disabled={loading}
         >
-          <Text style={styles.buttonText}>Resend OTP</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.secondaryButton}
-          onPress={() => router.back()}
-        >
-          <Text style={styles.secondaryButtonText}>
-            Return to {flow === "login" ? "Login" : "Registration"}
+          <Ionicons name="arrow-back" size={20} color="#3B82F6" />
+          <Text style={styles.backButtonText}>
+            Back to {flow === 'register' ? 'Register' : 'Login'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -167,6 +289,12 @@ export default function OtpVerificationScreen() {
 }
 
 const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+  },
   container: {
     flex: 1,
     backgroundColor: "#fff",
@@ -183,66 +311,98 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 5 },
   },
+  header: {
+    marginBottom: 32,
+    alignItems: "center",
+  },
   title: {
     fontSize: 24,
-    textAlign: "center",
-    marginBottom: 24,
     fontWeight: "600",
     color: "#333",
+    marginBottom: 8,
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: 16,
+    color: "#666",
     textAlign: "center",
-    marginBottom: 24,
-    color: "#777",
+    marginTop: 8,
   },
   error: {
     color: "red",
     textAlign: "center",
-    marginBottom: 15,
+    marginBottom: 16,
     fontSize: 14,
   },
-  inputContainer: {
+  otpContainer: {
     flexDirection: "row",
-    alignItems: "center",
-    borderColor: "#ccc",
+    justifyContent: "space-between",
+    marginBottom: 32,
+  },
+  otpInput: {
+    width: 60,
+    height: 60,
     borderWidth: 1,
+    borderColor: "#ddd",
     borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    marginBottom: 15,
+    textAlign: "center",
+    fontSize: 24,
+    fontWeight: "600",
+    color: "#333",
     backgroundColor: "#f9f9f9",
   },
-  input: {
-    flex: 1,
-    marginLeft: 10,
-    color: "#000",
+  errorInput: {
+    borderColor: "red",
   },
   button: {
     backgroundColor: "#3B82F6",
-    paddingVertical: 14,
+    paddingVertical: 16,
     borderRadius: 10,
-    marginTop: 8,
+    marginBottom: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 56,
   },
   buttonDisabled: {
     backgroundColor: "#a0c4ff",
   },
   buttonText: {
-    textAlign: "center",
     color: "#fff",
-    fontWeight: "600",
     fontSize: 16,
-  },
-  secondaryButton: {
-    backgroundColor: "#EF4444",
-    paddingVertical: 14,
-    borderRadius: 10,
-    marginTop: 8,
-  },
-  secondaryButtonText: {
+    fontWeight: "600",
     textAlign: "center",
-    color: "#fff",
+  },
+  resendContainer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 16,
+    flexWrap: 'wrap',
+  },
+  resendText: {
+    color: "#666",
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  resendLink: {
+    color: "#3B82F6",
     fontWeight: "600",
-    fontSize: 16,
+    fontSize: 14,
+  },
+  resendLinkDisabled: {
+    color: "#a0c4ff",
+  },
+  backButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 10,
+    marginTop: 16,
+    opacity: 0.8,
+  },
+  backButtonText: {
+    color: "#3B82F6",
+    fontWeight: "600",
+    marginLeft: 8,
+    fontSize: 14,
   },
 });
