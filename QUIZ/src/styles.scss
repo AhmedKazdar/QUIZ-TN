@@ -1,0 +1,26 @@
+/* You can add global styles to this file, and also import other style files */
+
+/* Toastr custom styles */
+.toast-container .ngx-toastr {
+  padding: 15px 15px 15px 50px;
+  box-shadow: 0 5px 10px rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.toast-success {
+  background-color: #51a351;
+}
+
+.toast-error {
+  background-color: #bd362f;
+}
+
+.toast-info {
+  background-color: #2f96b4;
+}
+
+.toast-warning {
+  background-color: #f89406;
+}

@@ -1,0 +1,202 @@
+// Variables for theming
+$primary-color: #4a6bff;
+$secondary-color: #6c757d;
+$success-color: #28a745;
+$danger-color: #dc3545;
+$light-bg: #f8f9fa;
+$dark-text: #2c3e50;
+$light-text: #6c757d;
+
+.otp-verification {
+  max-width: 100%;
+  width: 100%;
+  margin: 0 auto;
+  padding: 1rem;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  background: linear-gradient(135deg, #f5f7ff 0%, #f0f2f5 100%);
+
+  .card {
+    border: none;
+    border-radius: 16px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+    overflow: hidden;
+    width: 100%;
+    max-width: 500px;
+    margin: 0 auto;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    
+    &:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 15px 35px rgba(0, 0, 0, 0.12);
+    }
+  }
+
+  .card-header {
+    background: linear-gradient(135deg, $primary-color, #6a11cb);
+    color: white;
+    text-align: center;
+    padding: 1.75rem 1.5rem;
+    border-bottom: none;
+    
+    i {
+      font-size: 2.5rem;
+      margin-bottom: 1rem;
+      display: inline-block;
+      background: rgba(255, 255, 255, 0.2);
+      width: 80px;
+      height: 80px;
+      line-height: 80px;
+      border-radius: 50%;
+    }
+
+    h3 {
+      margin: 0.75rem 0 0.25rem;
+      font-weight: 700;
+      font-size: 1.75rem;
+    }
+    
+    p {
+      margin: 0;
+      opacity: 0.9;
+      font-size: 1.05rem;
+      
+      strong {
+        font-weight: 600;
+      }
+    }
+  }
+
+  .card-body {
+    padding: 2.5rem 1.5rem;
+    text-align: center;
+    background: white;
+    
+    @media (min-width: 768px) {
+      padding: 3rem 2.5rem;
+    }
+
+    .otp-inputs {
+      margin: 2rem 0;
+      display: flex;
+      justify-content: center;
+      gap: 0.75rem;
+      
+      input {
+        width: 3.5rem !important;
+        height: 4.5rem;
+        text-align: center;
+        font-size: 1.75rem;
+        font-weight: 700;
+        border: 2px solid #e1e5ee;
+        border-radius: 12px;
+        transition: all 0.3s ease;
+        color: $dark-text;
+        
+        &::placeholder {
+          color: #e1e5ee;
+        }
+
+        &:focus {
+          border-color: $primary-color;
+          box-shadow: 0 0 0 0.25rem rgba(74, 107, 255, 0.15);
+          outline: none;
+          animation: pulse 1.5s infinite;
+        }
+        
+        &.is-invalid {
+          border-color: $danger-color;
+        }
+
+        &[type=number] {
+          -moz-appearance: textfield;
+          appearance: textfield;
+        }
+
+        &::-webkit-outer-spin-button,
+        &::-webkit-inner-spin-button {
+          -webkit-appearance: none;
+          appearance: none;
+          margin: 0;
+        }
+      }
+    }
+
+    .btn-primary {
+      background-color: #4e73df;
+      border-color: #4e73df;
+      padding: 0.75rem 1.5rem;
+      font-weight: 600;
+      transition: all 0.3s ease;
+
+      &:hover, &:focus {
+        background-color: #2e59d9;
+        border-color: #2653d4;
+        transform: translateY(-1px);
+      }
+
+      &:active {
+        transform: translateY(0);
+      }
+    }
+
+    .btn-link {
+      color: #6e707e;
+      text-decoration: none;
+      padding: 0.5rem 0;
+      font-size: 0.9rem;
+
+      &:hover {
+        color: #4e73df;
+        text-decoration: none;
+      }
+
+      &[disabled] {
+        color: #b7b9cc;
+        cursor: not-allowed;
+      }
+    }
+  }
+
+  .text-muted {
+    color: #858796 !important;
+  }
+
+  .invalid-feedback {
+    font-size: 0.8rem;
+    margin-top: 0.25rem;
+  }
+
+  .alert {
+    font-size: 0.9rem;
+    padding: 0.75rem 1.25rem;
+    margin-bottom: 1rem;
+    border: 1px solid transparent;
+    border-radius: 0.35rem;
+  }
+
+  .alert-danger {
+    color: #721c24;
+    background-color: #f8d7da;
+    border-color: #f5c6cb;
+  }
+
+  .bi-shield-lock {
+    font-size: 3rem;
+    color: #4e73df;
+    margin-bottom: 1rem;
+  }
+
+  @media (max-width: 576px) {
+    .otp-inputs input {
+      width: 2.5rem;
+      height: 3rem;
+      font-size: 1.25rem;
+    }
+    
+    .card-body {
+      padding: 1.5rem;
+    }
+  }
+}

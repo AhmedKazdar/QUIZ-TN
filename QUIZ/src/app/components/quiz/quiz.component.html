@@ -1,0 +1,181 @@
+<div class="quiz-container" *ngIf="!quizStarted && !quizFinished">
+  <div class="quiz-start-card">
+    <h2>Select Quiz Mode</h2>
+    <p>Choose between practice mode to test your knowledge or online mode to compete with others!</p>
+    
+    <div class="quiz-modes">
+      <div class="quiz-mode-card" (click)="startQuiz('practice')" [class.loading]="loading && mode === 'practice'">
+        <div class="mode-icon">
+          <i class="bi bi-journal-text"></i>
+        </div>
+        <h3>Practice Mode</h3>
+        <p>Test your knowledge at your own pace with instant feedback.</p>
+        <button class="btn btn-primary" [disabled]="loading">
+          <span *ngIf="loading && mode === 'practice'" class="spinner-border spinner-border-sm me-2"></span>
+          Start Practice
+        </button>
+      </div>
+      
+      <div class="quiz-mode-card" (click)="startQuiz('online')" [class.loading]="loading && mode === 'online'">
+        <div class="mode-icon">
+          <i class="bi bi-globe"></i>
+        </div>
+        <h3>Online Mode</h3>
+        <p>Compete with others and get ranked on the leaderboard!</p>
+        <button class="btn btn-primary" [disabled]="loading">
+          <span *ngIf="loading && mode === 'online'" class="spinner-border spinner-border-sm me-2"></span>
+          Start Online Quiz
+        </button>
+      </div>
+    </div>
+    
+    <button class="btn btn-outline-secondary mt-4" routerLink="/home">
+      <i class="bi bi-arrow-left me-2"></i>Back to Home
+    </button>
+  </div>
+</div>
+
+<div class="quiz-container" *ngIf="quizStarted && !quizFinished">
+  <div class="quiz-card">
+    <div class="quiz-header">
+      <div class="quiz-progress">
+        <div class="progress">
+          <div class="progress-bar" 
+               [style.width]="((currentQuestionIndex + 1) / questions.length * 100) + '%'"
+               role="progressbar" 
+               [attr.aria-valuenow]="currentQuestionIndex + 1" 
+               aria-valuemin="0" 
+               [attr.aria-valuemax]="questions.length">
+          </div>
+        </div>
+        <div class="question-counter">
+          Question {{ currentQuestionIndex + 1 }} of {{ questions.length }}
+        </div>
+      </div>
+      
+      <div class="quiz-mode-badge" [ngClass]="mode === 'practice' ? 'practice' : 'online'">
+        {{ mode === 'practice' ? 'Practice Mode' : 'Online Mode' }}
+      </div>
+    </div>
+    
+    <div class="question-container" *ngIf="questions[currentQuestionIndex]">
+      <h3 class="question-text">{{ questions[currentQuestionIndex].text }}</h3>
+      
+      <div class="options-container">
+        <div *ngFor="let option of questions[currentQuestionIndex].options; let i = index" 
+             class="option" 
+             [class.selected]="selectedAnswer === i"
+             [class.answered]="answers[currentQuestionIndex] !== null && answers[currentQuestionIndex] !== undefined"
+             (click)="selectAnswer(i)">
+          <div class="option-number">{{ i + 1 }}</div>
+          <div class="option-text">{{ option }}</div>
+          <div class="answer-feedback" *ngIf="quizFinished">
+            <i class="bi" [ngClass]="{
+              'bi-check-circle-fill text-success': i === questions[currentQuestionIndex].correctAnswer,
+              'bi-x-circle-fill text-danger': i === answers[currentQuestionIndex] && i !== questions[currentQuestionIndex].correctAnswer
+            }"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="quiz-actions">
+      <button class="btn btn-outline-secondary" 
+              (click)="previousQuestion()" 
+              [disabled]="currentQuestionIndex === 0 || loading">
+        <i class="bi bi-arrow-left me-2"></i>Previous
+      </button>
+      
+      <div class="question-indicators">
+        <span *ngFor="let q of questions; let i = index" 
+              class="indicator" 
+              [class.answered]="answers[i] !== null && answers[i] !== undefined"
+              [class.current]="i === currentQuestionIndex"
+              [class.correct]="quizFinished && answers[i] === questions[i].correctAnswer"
+              [class.incorrect]="quizFinished && answers[i] !== null && answers[i] !== questions[i].correctAnswer"
+              (click)="navigateToQuestion(i)"
+              [title]="'Question ' + (i + 1) + (quizFinished ? ' - ' + (answers[i] === questions[i].correctAnswer ? 'Correct' : 'Incorrect') : '')">
+          {{ i + 1 }}
+        </span>
+      </div>
+      
+      <button class="btn btn-primary" 
+              (click)="nextQuestion()" 
+              [disabled]="selectedAnswer === null || loading">
+        <span *ngIf="loading" class="spinner-border spinner-border-sm me-2"></span>
+        {{ currentQuestionIndex === questions.length - 1 ? 'Finish Quiz' : 'Next' }}
+        <i class="bi bi-arrow-right ms-2"></i>
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="quiz-container" *ngIf="quizFinished && quizResult">
+  <div class="quiz-result-card" [@fadeInOut]>
+    <div class="result-header" [ngClass]="getScoreClass(scorePercentage)">
+      <h2>Quiz Completed!</h2>
+      <p>Your Score: {{ scorePercentage }}%</p>
+      <div class="score-circle">
+        <div class="score-text">
+          {{ quizResult.correctAnswers }}/{{ quizResult.total }}
+          <span>Correct</span>
+        </div>
+    <div class="result-score">
+      <div class="score-circle" [ngClass]="getScoreClass(quizResult.score || 0)">
+        <span class="score-value">{{ quizResult.score }}%</span>
+        <div class="score-circle-bg"></div>
+        <svg class="score-circle-chart" viewBox="0 0 36 36">
+          <path class="score-circle-bg"
+                d="M18 2.0845
+                   a 15.9155 15.9155 0 0 1 0 31.831
+                   a 15.9155 15.9155 0 0 1 0 -31.831"
+                fill="none"
+                stroke="#eee"
+                stroke-width="3"/>
+          <path class="score-circle-fill"
+                d="M18 2.0845
+                   a 15.9155 15.9155 0 0 1 0 31.831
+                   a 15.9155 15.9155 0 0 1 0 -31.831"
+                fill="none"
+                [attr.stroke-dasharray]="quizResult.score + ',100'"
+                stroke="currentColor"
+                stroke-width="3"/>
+        </svg>
+      </div>
+    </div>
+    
+    <div class="result-details">
+      <div class="result-detail">
+        <div class="detail-label">Correct Answers</div>
+        <div class="detail-value correct">{{ quizResult.correctAnswers }} / {{ quizResult.total }}</div>
+      </div>
+      <div class="result-detail">
+        <div class="detail-label">Incorrect Answers</div>
+        <div class="detail-value incorrect">{{ quizResult.incorrectAnswers }} / {{ quizResult.total }}</div>
+      </div>
+      <div class="result-detail">
+        <div class="detail-label">Time Spent</div>
+        <div class="detail-value">{{ quizResult.timeSpent }} seconds</div>
+      </div>
+    </div>
+    
+    <div class="result-actions">
+      <button class="btn btn-primary me-2" (click)="restartQuiz()">
+        <i class="bi bi-arrow-repeat me-2"></i>Try Again
+      </button>
+      <button class="btn btn-outline-secondary" (click)="goHome()">
+        <i class="bi bi-house-door me-2"></i>Back to Home
+      </button>
+    </div>
+    
+    <div class="result-mode" *ngIf="mode === 'online'">
+      <i class="bi bi-trophy-fill me-2"></i>
+      Your score has been submitted to the leaderboard!
+    </div>
+  </div>
+</div>
+
+<div *ngIf="error" class="alert alert-danger" role="alert">
+  <i class="bi bi-exclamation-triangle-fill me-2"></i>
+  {{ error }}
+</div>

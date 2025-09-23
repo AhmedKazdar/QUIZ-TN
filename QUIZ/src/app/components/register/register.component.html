@@ -1,0 +1,61 @@
+<div class="container mt-5">
+  <div class="row justify-content-center">
+    <div class="col-md-6">
+      <div class="card">
+        <div class="card-header">
+          <h3 class="text-center">Register</h3>
+        </div>
+        <div class="card-body">
+          <form [formGroup]="registerForm" (ngSubmit)="onSubmit()" *ngIf="!showOtpVerification">
+            <div class="mb-3">
+              <label for="username" class="form-label">Username</label>
+              <input 
+                type="text" 
+                class="form-control" 
+                id="username" 
+                formControlName="username"
+                [ngClass]="{ 'is-invalid': submitted && f['username'].errors }"
+                placeholder="Enter your username">
+              <div *ngIf="submitted && f['username'].errors" class="invalid-feedback">
+                <div *ngIf="f['username'].errors['required']">Username is required</div>
+                <div *ngIf="f['username'].errors['minlength']">Username must be at least 3 characters</div>
+              </div>
+            </div>
+            
+            <div class="mb-3">
+              <label for="phoneNumber" class="form-label">Phone Number</label>
+              <div class="input-group">
+                <span class="input-group-text">+216</span>
+                <input 
+                  type="tel" 
+                  class="form-control" 
+                  id="phoneNumber" 
+                  formControlName="phoneNumber"
+                  [ngClass]="{ 'is-invalid': submitted && f['phoneNumber'].errors }"
+                  placeholder="Enter your phone number">
+              </div>
+              <div *ngIf="submitted && f['phoneNumber'].errors" class="invalid-feedback d-block">
+                <div *ngIf="f['phoneNumber'].errors['required']">Phone number is required</div>
+                <div *ngIf="f['phoneNumber'].errors['pattern']">Please enter a valid 8-digit Tunisian phone number</div>
+              </div>
+            </div>
+
+            <div class="d-grid">
+              <button class="btn btn-primary" type="submit" [disabled]="loading">
+                <span *ngIf="loading" class="spinner-border spinner-border-sm me-1"></span>
+                {{ loading ? 'Sending OTP...' : 'Send OTP' }}
+              </button>
+            </div>
+          </form>
+
+          <app-verify-otp 
+            *ngIf="showOtpVerification" 
+            [phoneNumber]="phoneNumber" 
+            [username]="registerForm.get('username')?.value"
+            (changeNumberRequested)="onChangeNumberRequested()">
+          </app-verify-otp>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

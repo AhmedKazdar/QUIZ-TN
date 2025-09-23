@@ -1,0 +1,210 @@
+// Variables for theming
+$primary-color: #4a6bff;
+$secondary-color: #6c757d;
+$success-color: #28a745;
+$danger-color: #dc3545;
+$light-bg: #f8f9fa;
+$dark-text: #2c3e50;
+$light-text: #6c757d;
+
+:host {
+  display: flex;
+  min-height: 100vh;
+  align-items: center;
+  background: linear-gradient(135deg, #f5f7ff 0%, #f0f2f5 100%);
+  padding: 1rem;
+}
+
+.container {
+  max-width: 500px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 0;
+}
+
+.card {
+  border: none;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  background: white;
+  
+  &:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 15px 35px rgba(0, 0, 0, 0.12);
+  }
+}
+
+.card-header {
+  background: linear-gradient(135deg, $primary-color, #6a11cb);
+  color: white;
+  padding: 1.5rem;
+  text-align: center;
+  border-bottom: none;
+  
+  h3 {
+    margin: 0;
+    font-weight: 700;
+    font-size: 1.75rem;
+  }
+}
+
+.card-body {
+  padding: 2rem 1.5rem;
+  
+  @media (min-width: 768px) {
+    padding: 2.5rem 2rem;
+  }
+}
+
+.form-label {
+  font-weight: 600;
+  color: $dark-text;
+  margin-bottom: 0.5rem;
+  font-size: 0.95rem;
+}
+
+.form-control {
+  padding: 0.75rem 1rem;
+  border: 1px solid #e1e5ee;
+  border-radius: 10px;
+  transition: all 0.3s ease;
+  font-size: 1rem;
+  height: auto;
+  
+  &:focus {
+    border-color: $primary-color;
+    box-shadow: 0 0 0 0.25rem rgba(74, 107, 255, 0.15);
+  }
+  
+  &::placeholder {
+    color: #adb5bd;
+    font-weight: 400;
+  }
+}
+
+.input-group-text {
+  background-color: #f8f9fa;
+  border: 1px solid #e1e5ee;
+  color: $light-text;
+  font-weight: 500;
+  border-right: none;
+  border-top-left-radius: 10px !important;
+  border-bottom-left-radius: 10px !important;
+}
+
+.invalid-feedback {
+  font-size: 0.85rem;
+  margin-top: 0.35rem;
+  font-weight: 500;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, $primary-color, #6a11cb);
+  border: none;
+  padding: 0.85rem 1.5rem;
+  font-weight: 600;
+  font-size: 1.05rem;
+  border-radius: 10px;
+  transition: all 0.3s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  box-shadow: 0 4px 10px rgba(74, 107, 255, 0.3);
+  
+  &:hover, &:focus {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 15px rgba(74, 107, 255, 0.4);
+    background: linear-gradient(135deg, darken($primary-color, 5%), #5a0cb3);
+  }
+  
+  &:disabled {
+    background: #cbd5e0;
+    transform: none;
+    box-shadow: none;
+  }
+}
+
+.spinner-border {
+  width: 1.2rem;
+  height: 1.2rem;
+  border-width: 0.15em;
+}
+
+.otp-verification {
+  text-align: center;
+  
+  .otp-inputs {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 1.5rem;
+    
+    input {
+      width: 3.5rem !important;
+      height: 4rem;
+      text-align: center;
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin: 0 0.25rem;
+      border: 2px solid #e1e5ee;
+      border-radius: 10px;
+      transition: all 0.3s ease;
+      
+      &:focus {
+        border-color: $primary-color;
+        box-shadow: 0 0 0 0.25rem rgba(74, 107, 255, 0.15);
+      }
+      
+      &.is-invalid {
+        border-color: $danger-color;
+      }
+    }
+  }
+  
+  .resend-otp {
+    margin-top: 1.5rem;
+    font-size: 0.95rem;
+    color: $light-text;
+    
+    a {
+      color: $primary-color;
+      font-weight: 600;
+      text-decoration: none;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      
+      &:hover {
+        color: darken($primary-color, 10%);
+        text-decoration: underline;
+      }
+      
+      &:disabled {
+        color: $light-text;
+        cursor: not-allowed;
+        text-decoration: none;
+      }
+    }
+  }
+}
+
+// Responsive adjustments
+@media (max-width: 575.98px) {
+  .card-header h3 {
+    font-size: 1.5rem;
+  }
+  
+  .card-body {
+    padding: 1.75rem 1.25rem;
+  }
+  
+  .btn-primary {
+    padding: 0.75rem 1.25rem;
+    font-size: 1rem;
+  }
+  
+  .otp-verification .otp-inputs input {
+    width: 3rem !important;
+    height: 3.5rem;
+    font-size: 1.25rem;
+  }
+}

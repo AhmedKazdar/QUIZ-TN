@@ -1,0 +1,80 @@
+<div class="home-container">
+  <div class="welcome-card">
+    <div class="user-info" *ngIf="currentUser">
+      <h1>Welcome, {{ currentUser.username || 'User' }}!</h1>
+      <p class="text-muted" *ngIf="currentUser.phoneNumber">
+        <i class="bi bi-telephone-fill me-2"></i>+216 {{ currentUser.phoneNumber }}
+      </p>
+    </div>
+
+    <div class="actions mt-4">
+      <div class="quiz-mode-buttons">
+        <h3 class="text-center mb-3">Choose Quiz Mode</h3>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <button class="btn btn-primary btn-lg w-100 p-4" [routerLink]="['/quiz', 'practice']">
+              <div class="mode-icon mb-2">
+                <i class="bi bi-journal-text"></i>
+              </div>
+              <h4>Practice Mode</h4>
+              <p class="small text-light">Test your knowledge at your own pace</p>
+            </button>
+          </div>
+          <div class="col-md-6">
+            <button class="btn btn-success btn-lg w-100 p-4" [routerLink]="['/quiz', 'online']">
+              <div class="mode-icon mb-2">
+                <i class="bi bi-people"></i>
+              </div>
+              <h4>Online Mode</h4>
+              <p class="small text-light">Compete with other players in real-time</p>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="quick-stats mt-5">
+      <div class="stat-card">
+        <div class="stat-icon bg-primary">
+          <i class="bi bi-check-circle"></i>
+        </div>
+        <div class="stat-details">
+          <h3>0</h3>
+          <p>Quizzes Taken</p>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon bg-success">
+          <i class="bi bi-star"></i>
+        </div>
+        <div class="stat-details">
+          <h3>0</h3>
+          <p>High Score</p>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon bg-info">
+          <i class="bi bi-award"></i>
+        </div>
+        <div class="stat-details">
+          <h3>#0</h3>
+          <p>Your Rank</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="recent-activity mt-5">
+    <h3>Recent Activity</h3>
+    <div class="activity-empty">
+      <i class="bi bi-activity"></i>
+      <p>No recent activity yet. Start your first quiz!</p>
+    </div>
+  </div>
+
+  <div class="user-actions mt-4 text-center">
+    <button class="btn btn-link text-danger" (click)="logout()">
+      <i class="bi bi-box-arrow-right me-2"></i>Logout
+    </button>
+  </div>
+</div>
