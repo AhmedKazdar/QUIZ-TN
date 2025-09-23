@@ -6,28 +6,34 @@ const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 async function bootstrap() {
     const app = await core_1.NestFactory.create(app_module_1.AppModule);
-    const cors = require('cors');
-    console.log('Running in development mode - using permissive CORS settings');
+    console.log('Configuring CORS for development environment');
+    const allowedOrigins = [
+        'http://localhost:4200',
+        'http://localhost:3000',
+        'http://127.0.0.1:4200',
+        'http://127.0.0.1:3000',
+        'https://www.quiztn.com',
+        'https://quiztn.com',
+        'http://51.38.234.49'
+    ];
     app.enableCors({
-        origin: true,
-        methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+        origin: (origin, callback) => {
+            if (!origin || allowedOrigins.some(allowedOrigin => origin === allowedOrigin ||
+                origin.startsWith(`http://localhost:`) ||
+                origin.startsWith(`https://localhost:`))) {
+                return callback(null, true);
+            }
+            console.warn(`CORS blocked: ${origin}`);
+            return callback(new Error('Not allowed by CORS'), false);
+        },
+        methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+        allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+        exposedHeaders: ['Authorization', 'Content-Range', 'X-Content-Range'],
         credentials: true,
-        allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-        exposedHeaders: ['Content-Range', 'X-Content-Range'],
         preflightContinue: false,
         optionsSuccessStatus: 204
     });
-    console.log('CORS enabled for all origins in development mode');
-    app.enableCors({
-        origin: '*',
-        methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
-        credentials: true,
-        allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-        exposedHeaders: ['Content-Range', 'X-Content-Range'],
-        preflightContinue: false,
-        optionsSuccessStatus: 204
-    });
-    console.log('CORS configured to allow all origins');
+    console.log('CORS configured for frontend access');
     const config = new swagger_1.DocumentBuilder()
         .setTitle('Quiz')
         .setDescription('The best API documentation ever!')
@@ -41,7 +47,6 @@ async function bootstrap() {
         forbidNonWhitelisted: true,
         transform: true,
     }));
-    app.use(cors());
     const port = process.env.PORT || 3001;
     const server = await app.listen(port, '0.0.0.0');
     const address = server.address();

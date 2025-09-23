@@ -7,60 +7,44 @@ import { Server } from 'http';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  const cors = require('cors');
+  
   // Enable CORS for HTTP requests
-  // In development, allow all origins for easier debugging
-  console.log('Running in development mode - using permissive CORS settings');
+  console.log('Configuring CORS for development environment');
+  
+  const allowedOrigins = [
+    // Development
+    'http://localhost:4200',
+    'http://localhost:3000',
+    'http://127.0.0.1:4200',
+    'http://127.0.0.1:3000',
+    // Production
+    'https://www.quiztn.com',
+    'https://quiztn.com',
+    'http://51.38.234.49'
+  ];
+  
+  // Enable CORS with security headers
   app.enableCors({
-    origin: true,  // Allow all origins in development
-    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.some(allowedOrigin => 
+        origin === allowedOrigin || 
+        origin.startsWith(`http://localhost:`) ||
+        origin.startsWith(`https://localhost:`)
+      )) {
+        return callback(null, true);
+      }
+      console.warn(`CORS blocked: ${origin}`);
+      return callback(new Error('Not allowed by CORS'), false);
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+    exposedHeaders: ['Authorization', 'Content-Range', 'X-Content-Range'],
     credentials: true,
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-    exposedHeaders: ['Content-Range', 'X-Content-Range'],
     preflightContinue: false,
     optionsSuccessStatus: 204
   });
   
-  // Log CORS settings
-  console.log('CORS enabled for all origins in development mode');
-  
-  // For development, allow all origins
-  app.enableCors({
-    origin: '*',
-    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
-    credentials: true,
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-    exposedHeaders: ['Content-Range', 'X-Content-Range'],
-    preflightContinue: false,
-    optionsSuccessStatus: 204
-  });
-  
-  console.log('CORS configured to allow all origins');
-  
-  // Production CORS settings (commented out for now)
-  // if (process.env.NODE_ENV === 'production') {
-    // Production CORS settings (example)
-    /*
-    const allowedOrigins = [
-      'https://yourapp.com',  // Replace with your production domain
-    ];
-
-    app.enableCors({
-      origin: (origin, callback) => {
-        if (!origin || allowedOrigins.includes(origin)) {
-          return callback(null, true);
-        }
-        console.warn(`CORS blocked: ${origin}`);
-        return callback(new Error('Not allowed by CORS'), false);
-      },
-      methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
-      credentials: true,
-      allowedHeaders: ['Content-Type', 'Authorization'],
-      preflightContinue: false,
-      optionsSuccessStatus: 204
-    });
-    */
-  // }
+  console.log('CORS configured for frontend access');
 
   // Swagger setup
   const config = new DocumentBuilder()
@@ -80,9 +64,8 @@ async function bootstrap() {
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true,
-    }),
+    })
   );
-  app.use(cors());
 
   // Initialize Socket.io with CORS configuration for WebSocket connections
 
