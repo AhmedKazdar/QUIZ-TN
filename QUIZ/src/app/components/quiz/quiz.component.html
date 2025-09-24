@@ -1,18 +1,23 @@
-<div class="quiz-container" *ngIf="!quizStarted && !quizFinished">
+<div class="quiz-container" *ngIf="!quizStarted && !quizFinished && !modeFromRoute">
   <div class="quiz-start-card">
-    <h2>Select Quiz Mode</h2>
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <h2 class="mb-0">Select Quiz Mode</h2>
+      <button class="btn btn-outline-secondary btn-sm" (click)="navigateToHome()">
+        <i class="bi bi-house-door me-1"></i> Return Home
+      </button>
+    </div>
     <p>Choose between practice mode to test your knowledge or online mode to compete with others!</p>
     
     <div class="quiz-modes">
-      <div class="quiz-mode-card" (click)="startQuiz('practice')" [class.loading]="loading && mode === 'practice'">
+      <div class="quiz-mode-card" (click)="startQuiz('solo')" [class.loading]="loading && mode === 'solo'">
         <div class="mode-icon">
           <i class="bi bi-journal-text"></i>
         </div>
-        <h3>Practice Mode</h3>
+        <h3>Solo Mode</h3>
         <p>Test your knowledge at your own pace with instant feedback.</p>
         <button class="btn btn-primary" [disabled]="loading">
-          <span *ngIf="loading && mode === 'practice'" class="spinner-border spinner-border-sm me-2"></span>
-          Start Practice
+          <span *ngIf="loading && mode === 'solo'" class="spinner-border spinner-border-sm me-2"></span>
+          Start Solo
         </button>
       </div>
       
@@ -37,6 +42,15 @@
 
 <div class="quiz-container" *ngIf="quizStarted && !quizFinished">
   <div class="quiz-card">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h2 class="mb-0">
+        <span *ngIf="mode === 'solo'">Solo Quiz</span>
+        <span *ngIf="mode === 'online'">Online Quiz</span>
+      </h2>
+      <button class="btn btn-outline-secondary btn-sm" (click)="navigateToHome()">
+        <i class="bi bi-house-door me-1"></i> Return Home
+      </button>
+    </div>
     <div class="quiz-header">
       <div class="quiz-progress">
         <div class="progress">
@@ -53,26 +67,29 @@
         </div>
       </div>
       
-      <div class="quiz-mode-badge" [ngClass]="mode === 'practice' ? 'practice' : 'online'">
-        {{ mode === 'practice' ? 'Practice Mode' : 'Online Mode' }}
+      <div class="quiz-mode-badge" [ngClass]="mode === 'solo' ? 'solo' : 'online'">
+        {{ mode === 'solo' ? 'Solo Mode' : 'Online Mode' }}
       </div>
     </div>
     
     <div class="question-container" *ngIf="questions[currentQuestionIndex]">
-      <h3 class="question-text">{{ questions[currentQuestionIndex].text }}</h3>
+      <h3 class="question-text">{{ questions[currentQuestionIndex].textequestion }}</h3>
       
       <div class="options-container">
         <div *ngFor="let option of questions[currentQuestionIndex].options; let i = index" 
              class="option" 
              [class.selected]="selectedAnswer === i"
              [class.answered]="answers[currentQuestionIndex] !== null && answers[currentQuestionIndex] !== undefined"
+             [class.correct]="selectedAnswer === i && i === questions[currentQuestionIndex].correctAnswer"
+             [class.incorrect]="selectedAnswer === i && i !== questions[currentQuestionIndex].correctAnswer"
+             [class.disabled]="answers[currentQuestionIndex] !== null && answers[currentQuestionIndex] !== undefined"
              (click)="selectAnswer(i)">
           <div class="option-number">{{ i + 1 }}</div>
           <div class="option-text">{{ option }}</div>
-          <div class="answer-feedback" *ngIf="quizFinished">
+          <div class="answer-feedback" *ngIf="selectedAnswer !== null || quizFinished">
             <i class="bi" [ngClass]="{
               'bi-check-circle-fill text-success': i === questions[currentQuestionIndex].correctAnswer,
-              'bi-x-circle-fill text-danger': i === answers[currentQuestionIndex] && i !== questions[currentQuestionIndex].correctAnswer
+              'bi-x-circle-fill text-danger': selectedAnswer === i && i !== questions[currentQuestionIndex].correctAnswer
             }"></i>
           </div>
         </div>
@@ -80,30 +97,13 @@
     </div>
     
     <div class="quiz-actions">
-      <button class="btn btn-outline-secondary" 
-              (click)="previousQuestion()" 
-              [disabled]="currentQuestionIndex === 0 || loading">
-        <i class="bi bi-arrow-left me-2"></i>Previous
-      </button>
-      
-      <div class="question-indicators">
-        <span *ngFor="let q of questions; let i = index" 
-              class="indicator" 
-              [class.answered]="answers[i] !== null && answers[i] !== undefined"
-              [class.current]="i === currentQuestionIndex"
-              [class.correct]="quizFinished && answers[i] === questions[i].correctAnswer"
-              [class.incorrect]="quizFinished && answers[i] !== null && answers[i] !== questions[i].correctAnswer"
-              (click)="navigateToQuestion(i)"
-              [title]="'Question ' + (i + 1) + (quizFinished ? ' - ' + (answers[i] === questions[i].correctAnswer ? 'Correct' : 'Incorrect') : '')">
-          {{ i + 1 }}
-        </span>
-      </div>
+      <div></div> <!-- Empty div for flex spacing -->
       
       <button class="btn btn-primary" 
               (click)="nextQuestion()" 
               [disabled]="selectedAnswer === null || loading">
         <span *ngIf="loading" class="spinner-border spinner-border-sm me-2"></span>
-        {{ currentQuestionIndex === questions.length - 1 ? 'Finish Quiz' : 'Next' }}
+        {{ currentQuestionIndex === questions.length - 1 ? 'Finish Quiz' : 'Next Question' }}
         <i class="bi bi-arrow-right ms-2"></i>
       </button>
     </div>
@@ -111,18 +111,18 @@
 </div>
 
 <div class="quiz-container" *ngIf="quizFinished && quizResult">
-  <div class="quiz-result-card" [@fadeInOut]>
-    <div class="result-header" [ngClass]="getScoreClass(scorePercentage)">
+  <div class="quiz-result-card">
+    <div class="text-end mb-3">
+      <button class="btn btn-outline-secondary btn-sm" (click)="navigateToHome()">
+        <i class="bi bi-house-door me-1"></i> Return Home
+      </button>
+    </div>
+    <div class="result-header" [ngClass]="getScoreClass(quizResult?.score || 0)">
       <h2>Quiz Completed!</h2>
-      <p>Your Score: {{ scorePercentage }}%</p>
-      <div class="score-circle">
-        <div class="score-text">
-          {{ quizResult.correctAnswers }}/{{ quizResult.total }}
-          <span>Correct</span>
-        </div>
+      <p>Your Score: {{ quizResult?.score || 0 }}%</p>
     <div class="result-score">
-      <div class="score-circle" [ngClass]="getScoreClass(quizResult.score || 0)">
-        <span class="score-value">{{ quizResult.score }}%</span>
+      <div class="score-circle" [ngClass]="getScoreClass(quizResult?.score || 0)">
+        <span class="score-value">{{ quizResult?.score || 0 }}%</span>
         <div class="score-circle-bg"></div>
         <svg class="score-circle-chart" viewBox="0 0 36 36">
           <path class="score-circle-bg"
@@ -137,7 +137,7 @@
                    a 15.9155 15.9155 0 0 1 0 31.831
                    a 15.9155 15.9155 0 0 1 0 -31.831"
                 fill="none"
-                [attr.stroke-dasharray]="quizResult.score + ',100'"
+                [attr.stroke-dasharray]="(quizResult?.score || 0) + ',100'"
                 stroke="currentColor"
                 stroke-width="3"/>
         </svg>
@@ -147,23 +147,23 @@
     <div class="result-details">
       <div class="result-detail">
         <div class="detail-label">Correct Answers</div>
-        <div class="detail-value correct">{{ quizResult.correctAnswers }} / {{ quizResult.total }}</div>
+        <div class="detail-value correct">{{ quizResult?.correctAnswers || 0 }} / {{ quizResult?.totalQuestions || 0 }}</div>
       </div>
       <div class="result-detail">
         <div class="detail-label">Incorrect Answers</div>
-        <div class="detail-value incorrect">{{ quizResult.incorrectAnswers }} / {{ quizResult.total }}</div>
+        <div class="detail-value incorrect">{{ (quizResult?.totalQuestions || 0) - (quizResult?.correctAnswers || 0) }} / {{ quizResult?.totalQuestions || 0 }}</div>
       </div>
       <div class="result-detail">
         <div class="detail-label">Time Spent</div>
-        <div class="detail-value">{{ quizResult.timeSpent }} seconds</div>
+        <div class="detail-value">{{ quizResult?.timeSpent || 0 }} seconds</div>
       </div>
     </div>
     
     <div class="result-actions">
-      <button class="btn btn-primary me-2" (click)="restartQuiz()">
+      <button class="btn btn-primary me-2" type="button" (click)="restartQuiz()">
         <i class="bi bi-arrow-repeat me-2"></i>Try Again
       </button>
-      <button class="btn btn-outline-secondary" (click)="goHome()">
+      <button class="btn btn-outline-secondary" type="button" routerLink="/home">
         <i class="bi bi-house-door me-2"></i>Back to Home
       </button>
     </div>

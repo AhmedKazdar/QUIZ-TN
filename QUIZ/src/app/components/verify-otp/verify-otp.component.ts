@@ -1,7 +1,7 @@
 import { Component, Input, OnInit, OnDestroy, Output, EventEmitter } from '@angular/core';
 import { FormBuilder, FormGroup, FormControl, Validators } from '@angular/forms';
 import { AuthService } from '../../services/auth.service';
-import { Router } from '@angular/router';
+import { Router, ActivatedRoute } from '@angular/router';
 import { ToastrService } from 'ngx-toastr';
 import { Subscription } from 'rxjs';
 
@@ -28,6 +28,7 @@ export class VerifyOtpComponent implements OnInit, OnDestroy {
     private formBuilder: FormBuilder,
     private authService: AuthService,
     private router: Router,
+    private route: ActivatedRoute,
     private toastr: ToastrService
   ) {
     // Initialize form with 4 digit inputs
@@ -42,6 +43,7 @@ export class VerifyOtpComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit(): void {
+    console.log('[OTP] VerifyOtpComponent.ngOnInit');
     this.startCountdown();
   }
 
@@ -60,6 +62,7 @@ export class VerifyOtpComponent implements OnInit, OnDestroy {
 
   // Handle OTP form submission
   onSubmit(): void {
+    console.log('[OTP] onSubmit clicked');
     this.submitted = true;
     this.errorMessage = '';
 
@@ -70,18 +73,52 @@ export class VerifyOtpComponent implements OnInit, OnDestroy {
 
     this.loading = true;
     const otp = this.getOtpValue();
+    console.log('[OTP] Submitting OTP', { otp, phoneNumber: this.phoneNumber, username: this.username });
     
     // Include username in the OTP verification for new users
     this.authService.verifyOtp(this.phoneNumber, otp, this.username).subscribe({
       next: (response) => {
+        console.log('[OTP] Verification response:', response);
+        
+        // Check if user is properly authenticated
+        const currentUser = this.authService.currentUserValue;
+        console.log('[OTP] Current user after verification:', currentUser);
+        
+        if (!currentUser || !currentUser.token) {
+          throw new Error('Authentication failed: No user or token found');
+        }
+        
         this.loading = false;
         this.toastr.success('Phone number verified successfully!');
-        // Navigate to dashboard or home page
-        this.router.navigate(['/dashboard']);
+        
+        // Navigate to welcome page
+        this.router.navigate(['/home']).then(success => {
+          if (!success) {
+            console.error('[OTP] Navigation to /welcome failed');
+            this.toastr.error('Failed to navigate to welcome page');
+          }
+        });
       },
       error: (error) => {
         this.loading = false;
-        this.errorMessage = error.error?.message || 'Invalid or expired OTP. Please try again.';
+        console.error('[OTP] Verification error (onSubmit):', error);
+        
+        // Handle different types of errors
+        let errorMessage = 'An error occurred during verification';
+        
+        if (error.status === 0) {
+          errorMessage = 'Unable to connect to the server. Please check your internet connection.';
+        } else if (error.status === 400 || error.status === 401) {
+          errorMessage = error.error?.message || 'Invalid or expired OTP. Please try again.';
+        } else if (error.status === 404) {
+          errorMessage = 'User not found. Please register first.';
+        } else if (error.status >= 500) {
+          errorMessage = 'Server error. Please try again later.';
+        }
+        
+        this.errorMessage = errorMessage;
+        this.toastr.error(errorMessage);
+        
         // Clear the form on error
         this.otpForm.reset();
       }
@@ -183,5 +220,58 @@ export class VerifyOtpComponent implements OnInit, OnDestroy {
     const input = event.target as HTMLInputElement;
     // Ensure only numbers are entered
     input.value = input.value.replace(/[^0-9]/g, '');
+  }
+
+  verifyOtp(otp: string): void {
+    this.loading = true;
+    this.authService.verifyOtp(this.phoneNumber, otp, this.username).subscribe({
+      next: (response: any) => {  // Add type annotation
+        this.loading = false;
+        console.log('[OTP] Verification succeeded (verifyOtp method).', {
+          phoneNumber: this.phoneNumber,
+          username: this.username,
+          response
+        });
+        this.navigateAfterLogin();
+      },
+      error: (error: any) => {  // Add type annotation
+        this.loading = false;
+        this.errorMessage = error?.error?.message || error?.message || 'Verification failed';
+      }
+    });
+  }
+
+  // Decide where to go after successful verification
+  private navigateAfterLogin(): void {
+    console.log('[OTP] navigateAfterLogin called');
+    
+    // Check if user is authenticated
+    const isAuthenticated = this.authService.isAuthenticated();
+    console.log('[OTP] User authenticated:', isAuthenticated);
+    
+    if (!isAuthenticated) {
+      console.error('[OTP] User not authenticated after verification');
+      this.toastr.error('Authentication failed. Please try again.');
+      return;
+    }
+    
+    const returnUrl = this.route.snapshot.queryParamMap.get('returnUrl');
+    console.log('[OTP] Return URL from query params:', returnUrl);
+    
+    // If user came from an in-quiz route, take them to the Welcome page instead
+    if (returnUrl && !returnUrl.startsWith('/quiz/online')) {
+      console.log('[OTP] Navigating to provided returnUrl:', returnUrl);
+      this.router.navigateByUrl(returnUrl).catch(err => {
+        console.error('[OTP] Navigation to returnUrl failed:', err);
+        this.router.navigate(['/home']);
+      });
+      return;
+    }
+    
+    // Default welcome page showing modes and greeting
+    console.log('[OTP] Navigating to /welcome');
+    this.router.navigate(['/home']).catch(err => {
+      console.error('[OTP] Navigation to /welcome failed:', err);
+    });
   }
 }

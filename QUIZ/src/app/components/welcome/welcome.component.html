@@ -1,0 +1,15 @@
+<div class="welcome-container">
+  <div class="welcome-card">
+    <h1>Welcome {{ currentUser?.username || 'Player' }}!</h1>
+    <p class="text-muted">Choose a mode to start playing.</p>
+
+    <div class="modes">
+      <button class="btn btn-primary" [routerLink]="['/quiz','solo']" type="button">
+        <i class="bi bi-journal-text me-2"></i>Play Solo
+      </button>
+      <button class="btn btn-success" [routerLink]="['/quiz','online']" type="button">
+        <i class="bi bi-people me-2"></i>Play Online
+      </button>
+    </div>
+  </div>
+</div>

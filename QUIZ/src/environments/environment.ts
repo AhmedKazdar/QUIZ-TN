@@ -4,8 +4,8 @@
 
 export const environment = {
   production: false,
-  // Development API URL - using the production server but can be overridden for local development
-  apiUrl: 'http://localhost:3001/api',
+  // Development API URL - points to the local backend server
+  apiUrl: 'http://localhost:3001',
   
   // Development settings
   useMockData: true,  // Set to false to use real API in development

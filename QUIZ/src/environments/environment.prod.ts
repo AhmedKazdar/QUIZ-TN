@@ -1,7 +1,7 @@
 export const environment = {
   production: true,
   // Production API URL - using your VPS IP with HTTPS
-  apiUrl: 'https://www.quiztn.com/api',
+  apiUrl: 'https://quiz-webserver.space',
   
   // Production settings
   useMockData: false,  // Always use real API in production

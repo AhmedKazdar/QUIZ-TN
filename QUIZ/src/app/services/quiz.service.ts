@@ -15,10 +15,10 @@ export interface Question {
 
 export interface QuizResult {
   score: number;
-  total: number;
   correctAnswers: number;
-  incorrectAnswers: number;
+  total: number;  
   timeSpent: number;
+  percentage?: number;
 }
 
 @Injectable({
@@ -247,12 +247,13 @@ export class QuizService {
       }
     }
     
+    const scorePercent = Math.round((correct / this.currentQuiz.length) * 100);
     const result: QuizResult = {
-      score: Math.round((correct / this.currentQuiz.length) * 100),
+      score: scorePercent,
       total: this.currentQuiz.length,
       correctAnswers: correct,
-      incorrectAnswers: this.currentQuiz.length - correct,
-      timeSpent: timeSpent
+      timeSpent: timeSpent,
+      percentage: scorePercent
     };
     
     this.quizResult.next(result);
@@ -277,8 +278,8 @@ export class QuizService {
           score: response.score,
           total: this.currentQuiz.length,
           correctAnswers: Math.round((response.score / 100) * this.currentQuiz.length),
-          incorrectAnswers: this.currentQuiz.length - Math.round((response.score / 100) * this.currentQuiz.length),
-          timeSpent
+          timeSpent,
+          percentage: response.score
         };
         this.quizResult.next(result);
         return result;

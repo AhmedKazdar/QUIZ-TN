@@ -11,6 +11,7 @@ import { RegisterComponent } from './components/register/register.component';
 import { VerifyOtpComponent } from './components/verify-otp/verify-otp.component';
 import { HomeComponent } from './components/home/home.component';
 import { QuizComponent } from './components/quiz/quiz.component';
+import { WelcomeComponent } from './components/welcome/welcome.component';
 import { QuizService } from './services/quiz.service';
 import { AuthInterceptor } from './interceptors/auth.interceptor';
 
@@ -20,7 +21,8 @@ import { AuthInterceptor } from './interceptors/auth.interceptor';
     RegisterComponent,
     VerifyOtpComponent,
     HomeComponent,
-    QuizComponent
+    QuizComponent,
+    WelcomeComponent
   ],
   imports: [
     BrowserModule,

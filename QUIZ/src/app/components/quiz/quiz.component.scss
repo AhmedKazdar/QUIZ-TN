@@ -185,7 +185,7 @@ $transition: all 0.3s ease;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 
-  &.practice {
+  &.practice, &.solo {
     background-color: rgba($primary-color, 0.1);
     color: $primary-color;
   }
@@ -244,6 +244,14 @@ $transition: all 0.3s ease;
     margin-left: auto;
     font-size: 1.2rem;
     animation: bounceIn 0.3s ease-out;
+    
+    .bi-check-circle-fill {
+      color: $success-color;
+    }
+    
+    .bi-x-circle-fill {
+      color: $danger-color;
+    }
   }
   cursor: pointer;
   transition: all 0.2s ease;
@@ -260,6 +268,26 @@ $transition: all 0.3s ease;
 
     .option-number {
       background: $primary-color;
+      color: white;
+    }
+  }
+  
+  &.correct {
+    border-color: $success-color;
+    background-color: rgba($success-color, 0.05);
+    
+    .option-number {
+      background: $success-color;
+      color: white;
+    }
+  }
+  
+  &.incorrect {
+    border-color: $danger-color;
+    background-color: rgba($danger-color, 0.05);
+    
+    .option-number {
+      background: $danger-color;
       color: white;
     }
   }
@@ -610,7 +638,7 @@ $transition: all 0.3s ease;
     box-shadow: none;
     border: 1px solid #ddd;
   }
-}s
+}
 .quiz-result-card {
   background: white;
   border-radius: $border-radius;
@@ -699,6 +727,7 @@ $transition: all 0.3s ease;
   gap: 1.5rem;
   margin-bottom: 2.5rem;
   text-align: left;
+  margin-top: 1rem; // ensure spacing below header content
 }
 
 .result-detail {
@@ -756,6 +785,21 @@ $transition: all 0.3s ease;
   i {
     font-size: 1.1rem;
   }
+}
+
+// Fix stacking and overlap on result view
+.quiz-result-card {
+  .result-header { position: relative; z-index: 1; }
+  .result-score { position: relative; z-index: 1; margin-top: 0.5rem; }
+  .result-details { position: relative; z-index: 2; }
+  .result-actions { position: relative; z-index: 3; }
+}
+
+.result-header::before { z-index: 0; }
+
+// Prevent gradient overlay from blocking clicks anywhere
+.result-header::before {
+  pointer-events: none;
 }
 
 // Responsive Adjustments
