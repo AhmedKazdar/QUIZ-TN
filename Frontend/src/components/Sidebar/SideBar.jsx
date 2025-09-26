@@ -28,7 +28,8 @@ const SideBar = ({ username, role, isOpen = false, onLogout, onClose, onToggle }
 
   const adminItems = [
     { path: '/admin/users', icon: <FaUsers />, label: 'Users' },
-    { path: '/admin/create-account', icon: <FaUserPlus />, label: 'Create Account' }
+    { path: '/admin/create-account', icon: <FaUserPlus />, label: 'Create Account' },
+    { path: '/quizzes', icon: <FaQuestionCircle />, label: 'Quiz Management' }
   ];
 
   // Close sidebar when clicking outside on mobile

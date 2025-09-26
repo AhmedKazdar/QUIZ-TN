@@ -1,0 +1,19 @@
+.site-layout {
+  transition: all 0.2s;
+}
+
+/* Add responsive styles */
+@media (max-width: 768px) {
+  .site-layout {
+    margin-left: 0 !important;
+  }
+  
+  .ant-layout-sider-collapsed + .site-layout {
+    margin-left: 0 !important;
+  }
+}
+
+/* Ensure the content takes full width when sidebar is collapsed */
+.ant-layout-sider-collapsed + .site-layout {
+  margin-left: 80px !important;
+}

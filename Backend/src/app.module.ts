@@ -14,6 +14,7 @@ import { WebhookModule } from './webhook/webhook.module';
 import { HealthController } from './health/health.controller';
 import { QuizTimeModule } from './quiz-time/quiz-time.module';
 import { PlayerModule } from './player/player.module';
+import { QuizModule } from './quiz/quiz.module';
 
 @Module({
   controllers: [HealthController],
@@ -40,6 +41,7 @@ import { PlayerModule } from './player/player.module';
     WebhookModule,
     QuizTimeModule,
     PlayerModule,
+    QuizModule,
   ],
   providers: [OnlineGateway],
 })

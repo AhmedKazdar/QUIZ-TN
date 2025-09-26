@@ -49,6 +49,16 @@ export class ScoreService {
     return this.http.get<{ rank: number; totalUsers: number }>(`${this.apiUrl}/rank/${userId}`);
   }
 
+  saveScore(scoreData: {
+    userId: string;
+    score: number;
+    correctAnswers: number;
+    totalQuestions: number;
+    timeSpent: number;
+  }): Observable<Score> {
+    return this.http.post<Score>(`${this.apiUrl}`, scoreData);
+  }
+
   getLeaderboard(page: number = 1, limit: number = 10): Observable<LeaderboardResponse> {
     return this.http.get<LeaderboardResponse>(
       `${this.apiUrl}/leaderboard?page=${page}&limit=${limit}`

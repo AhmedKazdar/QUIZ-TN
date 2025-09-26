@@ -15,6 +15,8 @@ import ResponsesPage from "./pages/Response/ResponsesPages";
 import UsersList from "./pages/UsersList/UsersList";
 import Profile from "./pages/Profile/Profile";
 import Ranking from "./pages/Ranking/Ranking";
+import QuizList from "./pages/QuizManagement/QuizList";
+import QuizForm from "./pages/QuizManagement/QuizForm";
 
 const router = createBrowserRouter(
   [
@@ -96,6 +98,36 @@ const router = createBrowserRouter(
       element: (
         <PrivateRoute>
           <Ranking />
+        </PrivateRoute>
+      ),
+    },
+    {
+      path: "/quizzes",
+      element: (
+        <PrivateRoute>
+          <AdminRoute>
+            <QuizList />
+          </AdminRoute>
+        </PrivateRoute>
+      ),
+    },
+    {
+      path: "/quizzes/new",
+      element: (
+        <PrivateRoute>
+          <AdminRoute>
+            <QuizForm />
+          </AdminRoute>
+        </PrivateRoute>
+      ),
+    },
+    {
+      path: "/quizzes/edit/:id",
+      element: (
+        <PrivateRoute>
+          <AdminRoute>
+            <QuizForm />
+          </AdminRoute>
         </PrivateRoute>
       ),
     },

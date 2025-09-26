@@ -155,7 +155,6 @@ $transition: all 0.3s ease;
 
   .progress {
     height: 8px;
-    border-radius: 4px;
     background-color: #e9ecef;
     margin-bottom: 0.5rem;
     overflow: hidden;
@@ -165,34 +164,89 @@ $transition: all 0.3s ease;
       transition: width 0.3s ease;
     }
   }
+}
 
-  .question-counter {
-    text-align: right;
-    font-size: 0.9rem;
-    color: $light-text;
-    font-weight: 500;
-  }
+// Quiz Header
+.quiz-header {
+  margin-bottom: 2rem;
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.quiz-progress {
+  flex: 1;
+  min-width: 200px;
+  margin-bottom: 0;
+}
+
+.question-counter {
+  text-align: left;
+  color: $light-text;
+  font-size: 0.9rem;
+  margin-top: 0.5rem;
 }
 
 .quiz-mode-badge {
-  position: absolute;
-  top: 1.5rem;
-  right: 1.5rem;
-  padding: 0.35rem 0.75rem;
-  border-radius: 20px;
+  display: inline-block;
+  padding: 0.35rem 1rem;
+  border-radius: 50px;
   font-size: 0.8rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-
-  &.practice, &.solo {
+  transition: all 0.3s ease;
+  
+  &.solo {
     background-color: rgba($primary-color, 0.1);
     color: $primary-color;
   }
-
+  
   &.online {
     background-color: rgba($success-color, 0.1);
     color: $success-color;
+  }
+}
+
+.quiz-timer {
+  display: flex;
+  align-items: center;
+  font-size: 1.1rem;
+  font-weight: 700;
+  padding: 0.5rem 1rem;
+  border-radius: 50px;
+  background-color: rgba($primary-color, 0.1);
+  color: $primary-color;
+  transition: all 0.3s ease;
+  min-width: 80px;
+  justify-content: center;
+  
+  i {
+    font-size: 1rem;
+    margin-right: 0.5rem;
+    animation: pulse 1.5s infinite;
+  }
+  
+  &.text-warning {
+    color: $warning-color;
+    background-color: rgba($warning-color, 0.1);
+    
+    i {
+      animation: pulse 0.8s infinite;
+    }
+  }
+  
+  &.text-danger {
+    color: $danger-color;
+    background-color: rgba($danger-color, 0.1);
+    animation: pulse 0.5s infinite;
+    
+    i {
+      animation: pulse 0.5s infinite;
+    }
   }
 }
 

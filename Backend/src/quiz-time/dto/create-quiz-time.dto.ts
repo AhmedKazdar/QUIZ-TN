@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, Matches } from 'class-validator';
+import { IsBoolean, IsNotEmpty, IsOptional, IsString, Matches } from 'class-validator';
 
 export class CreateQuizTimeDto {
   @IsString()
@@ -7,4 +7,8 @@ export class CreateQuizTimeDto {
     message: 'Time must be in HH:MM or HH:MM:SS format',
   })
   time: string;
+  
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
 }

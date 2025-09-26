@@ -9,16 +9,25 @@ export interface Question {
   text: string;
   options: string[];
   correctAnswer: number;
-  category?: string;
-  difficulty?: string;
 }
 
 export interface QuizResult {
+  _id?: string;
+  userId: string;
   score: number;
   correctAnswers: number;
-  total: number;  
+  totalQuestions: number;
   timeSpent: number;
-  percentage?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface SubmitResponseDto {
+  userId: string;
+  questionId: string;
+  answer: number;
+  isCorrect: boolean;
+  timeSpent: number;
 }
 
 @Injectable({
@@ -34,262 +43,186 @@ export class QuizService {
 
   constructor(private http: HttpClient) {}
 
-  // Get the current answers
-  getAnswers(): number[] {
-    return [...this.currentAnswers];
+  // Fetch questions from the backend
+  fetchQuestions(limit: number = 10): Observable<Question[]> {
+    const params: any = { limit: limit.toString() };
+
+    return this.http.get<Question[]>(`${this.apiUrl}/quiz`, { 
+      params,
+      withCredentials: true,
+      headers: this.getHeaders()
+    }).pipe(
+      tap(questions => {
+        this.currentQuiz = questions;
+        this.currentAnswers = new Array(questions.length).fill(-1);
+      }),
+      catchError(error => {
+        console.error('Error fetching questions:', error);
+        return throwError(() => new Error('Failed to load questions. Please try again later.'));
+      })
+    );
+  }
+
+  // Submit a response to the backend
+  submitResponse(response: SubmitResponseDto): Observable<any> {
+    return this.http.post(`${this.apiUrl}/quiz/submit`, response, {
+      withCredentials: true,
+      headers: this.getHeaders()
+    }).pipe(
+      catchError(this.handleError)
+    );
+  }
+
+  // Get quiz statistics
+  getQuizStats(): Observable<any> {
+    return this.http.get(`${this.apiUrl}/quiz/stats`, {
+      withCredentials: true,
+      headers: this.getHeaders()
+    }).pipe(
+      catchError(this.handleError)
+    );
+  }
+
+  // Get a specific question
+  getQuestionById(id: string): Observable<Question> {
+    return this.http.get<Question>(`${this.apiUrl}/quiz/${id}`, {
+      withCredentials: true,
+      headers: this.getHeaders()
+    }).pipe(
+      catchError(this.handleError)
+    );
+  }
+
+  // Submit the final quiz result
+  submitQuizResult(result: Omit<QuizResult, '_id' | 'createdAt' | 'updatedAt'>): Observable<QuizResult> {
+    return this.http.post<QuizResult>(`${this.apiUrl}/quiz/result`, result, {
+      withCredentials: true,
+      headers: this.getHeaders()
+    }).pipe(
+      tap(quizResult => this.quizResult.next(quizResult)),
+      catchError(this.handleError)
+    );
+  }
+
+  // Helper methods
+  private getHeaders(): HttpHeaders {
+    return new HttpHeaders({
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Cache-Control': 'no-cache',
+      'Pragma': 'no-cache'
+    });
   }
 
   private handleError(error: HttpErrorResponse) {
     let errorMessage = 'An error occurred';
     if (error.error instanceof ErrorEvent) {
-      // Client-side error
       errorMessage = `Error: ${error.error.message}`;
     } else {
-      // Server-side error
       errorMessage = `Error Code: ${error.status}\nMessage: ${error.message}`;
     }
     console.error(errorMessage);
     return throwError(() => new Error(errorMessage));
   }
 
-  // Submit an answer for the current question
-  submitAnswer(questionIndex: number, answerIndex: number): void {
-    if (questionIndex >= 0 && questionIndex < this.currentQuiz.length) {
-      this.currentAnswers[questionIndex] = answerIndex;
-    }
-  }
-
-  // Fetch questions from the backend
-  fetchQuestions(category?: string, difficulty?: string, limit: number = 10): Observable<Question[]> {
-    const params: any = { limit: limit.toString() };
-    if (category) params.category = category;
-    if (difficulty) params.difficulty = difficulty;
-
-    // Use mock data in development if configured
-    if (!environment.production && environment.useMockData) {
-      console.log('[DEV] Using mock questions');
-      return of(this.mockQuestions).pipe(
-        delay(300), // Simulate small network delay
-        tap(questions => {
-          this.currentQuiz = questions;
-          this.currentAnswers = new Array(questions.length).fill(-1);
-        })
-      );
-    }
-    
-    console.log(`Fetching questions from: ${this.apiUrl}/question`, 'with params:', params);
-    
-    return this.http.get<Question[]>(`${this.apiUrl}/question`, { 
-      params,
-      withCredentials: true,  // Important for sending cookies with CORS
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'Cache-Control': 'no-cache',
-        'Pragma': 'no-cache'
-      }
-    }).pipe(
-      tap(questions => {
-        if (environment.enableDebugLogging) {
-          console.log('Received questions:', questions);
-        }
-        
-        // If no questions received, use mock data in development
-        if ((!questions || questions.length === 0) && !environment.production) {
-          console.warn('No questions received, using mock data');
-          questions = this.mockQuestions;
-        }
-        
-        this.currentQuiz = questions;
-        this.currentAnswers = new Array(questions.length).fill(-1);
-      }),
-      catchError(error => {
-        console.error('Error fetching questions:', error);
-        
-        // In production, rethrow the error to be handled by the component
-        if (environment.production) {
-          return throwError(() => new Error('Failed to load questions. Please try again later.'));
-        }
-        
-        // In development, use mock data as fallback
-        console.warn('Using mock data due to error');
-        this.currentQuiz = this.mockQuestions;
-        this.currentAnswers = new Array(this.mockQuestions.length).fill(-1);
-        return of(this.mockQuestions);
-      })
-    );
-  }
-
-  // Submit a response to the backend
-  submitResponse(userId: string, questionId: string, answerIndex: number): Observable<any> {
-    const url = `${this.apiUrl}/response/submit`;
-    const payload = {
-      userId,
-      questionId,
-      selectedOption: answerIndex
-    };
-    
-    return this.http.post(url, payload).pipe(
-      catchError(this.handleError)
-    );
+  // Get the current answers
+  getAnswers(): number[] {
+    return [...this.currentAnswers];
   }
 
   // Get the current question
   getQuestion(index: number): Question | null {
     return this.currentQuiz[index] || null;
   }
-
   // Get all questions
   getQuestions(): Question[] {
     return [...this.currentQuiz];
   }
 
-  // Mock questions for development
-  private mockQuestions: Question[] = [
-    {
-      _id: '1',
-      text: 'What is the capital of France?',
-      options: ['London', 'Berlin', 'Paris', 'Madrid'],
-      correctAnswer: 2,
-      category: 'Geography',
-      difficulty: 'easy'
-    },
-    {
-      _id: '2',
-      text: 'Which planet is known as the Red Planet?',
-      options: ['Venus', 'Mars', 'Jupiter', 'Saturn'],
-      correctAnswer: 1,
-      category: 'Science',
-      difficulty: 'easy'
-    },
-    {
-      _id: '3',
-      text: 'What is the largest mammal in the world?',
-      options: ['African Elephant', 'Blue Whale', 'Giraffe', 'Polar Bear'],
-      correctAnswer: 1,
-      category: 'Science',
-      difficulty: 'medium'
-    },
-    {
-      _id: '4',
-      text: 'Which language is Angular written in?',
-      options: ['Java', 'C#', 'TypeScript', 'Dart'],
-      correctAnswer: 2,
-      category: 'Programming',
-      difficulty: 'easy'
-    },
-    {
-      _id: '5',
-      text: 'What is the result of 2 + 2 * 2?',
-      options: ['6', '8', '4', '10'],
-      correctAnswer: 0,
-      category: 'Math',
-      difficulty: 'easy'
+  // Check if current time is within quiz time
+  checkQuizTime(): Observable<{ canStart: boolean; nextQuizTime?: string; message?: string }> {
+    return this.http.get<{canStart: boolean; nextQuizTime?: string; message?: string}>(`${this.apiUrl}/quiz-times/check`, {
+      withCredentials: true,
+      headers: this.getHeaders()
+    }).pipe(
+      catchError(error => {
+        console.error('Error checking quiz time:', error);
+        return of({ 
+          canStart: false, 
+          message: 'Unable to verify quiz time. Please try again later.' 
+        });
+      })
+    );
+  }
+
+  // Calculate score for the current quiz
+  calculateScore(timeSpent: number): Observable<QuizResult> {
+    const correctAnswers = this.currentQuiz.reduce((count, question, index) => {
+      return count + (this.currentAnswers[index] === question.correctAnswer ? 1 : 0);
+    }, 0);
+
+    const totalQuestions = this.currentQuiz.length;
+    const score = Math.round((correctAnswers / totalQuestions) * 100);
+
+    const result: QuizResult = {
+      userId: 'current-user-id', // This should be replaced with actual user ID
+      score,
+      correctAnswers,
+      totalQuestions,
+      timeSpent
+    };
+
+    if (this.quizMode === 'online') {
+      return this.submitQuizResult(result);
     }
-  ];
+
+    return of(result);
+  }
 
   // Start a new quiz
-  startQuiz(mode: 'practice' | 'online', category?: string, difficulty?: string): Observable<Question[]> {
+  startQuiz(mode: 'practice' | 'online'): Observable<Question[]> {
     this.quizMode = mode;
     this.quizStartTime = Date.now();
     this.currentAnswers = [];
     
-    // For development, use mock data if API is not available
-    if (!environment.production) {
-      // Simulate API call with delay
-      return of(this.mockQuestions).pipe(
-        delay(500), // Simulate network delay
-        tap(questions => {
-          this.currentQuiz = questions;
-          this.currentAnswers = new Array(questions.length).fill(-1);
-        })
-      );
-    }
-
-    // In production, use real API
-    const params: any = { mode };
-    if (category) params.category = category;
-    if (difficulty) params.difficulty = difficulty;
-
-    return this.http.get<Question[]>(`${this.apiUrl}/questions/quiz`, { params }).pipe(
-      tap(questions => {
-        this.currentQuiz = questions;
-        this.currentAnswers = new Array(questions.length).fill(-1);
-      }),
-      catchError((error: HttpErrorResponse) => {
-        console.error('Error fetching questions, using mock data', error);
-        // Fallback to mock data if API fails
-        this.currentQuiz = this.mockQuestions;
-        this.currentAnswers = new Array(this.mockQuestions.length).fill(-1);
-        return of(this.mockQuestions);
-      })
-    );
-  }
-
-
-  // Calculate and return the quiz result
-  calculateResult(): Observable<QuizResult> {
-    if (this.quizMode === 'practice') {
-      return this.calculatePracticeResult();
-    } else {
-      return this.submitOnlineQuiz();
-    }
-  }
-
-  // Calculate result for practice mode
-  private calculatePracticeResult(): Observable<QuizResult> {
-    const timeSpent = Math.floor((Date.now() - this.quizStartTime) / 1000);
-    let correct = 0;
-    
-    for (let i = 0; i < this.currentQuiz.length; i++) {
-      if (this.currentAnswers[i] === this.currentQuiz[i].correctAnswer) {
-        correct++;
-      }
+    // For practice mode, we don't need to check quiz time
+    if (mode === 'practice') {
+      return this.fetchQuestions();
     }
     
-    const scorePercent = Math.round((correct / this.currentQuiz.length) * 100);
-    const result: QuizResult = {
-      score: scorePercent,
-      total: this.currentQuiz.length,
-      correctAnswers: correct,
-      timeSpent: timeSpent,
-      percentage: scorePercent
-    };
-    
-    this.quizResult.next(result);
-    return of(result);
-  }
-
-  // Submit online quiz and get results
-  private submitOnlineQuiz(): Observable<QuizResult> {
-    const timeSpent = Math.floor((Date.now() - this.quizStartTime) / 1000);
-    const payload = {
-      responses: this.currentQuiz.map((q, i) => ({
-        questionId: q._id,
-        answer: this.currentAnswers[i],
-        isCorrect: this.currentAnswers[i] === q.correctAnswer
-      })),
-      timeSpent
-    };
-
-    return this.http.post<{ score: number }>(`${this.apiUrl}/response/submit`, payload).pipe(
-      map(response => {
-        const result: QuizResult = {
-          score: response.score,
-          total: this.currentQuiz.length,
-          correctAnswers: Math.round((response.score / 100) * this.currentQuiz.length),
-          timeSpent,
-          percentage: response.score
-        };
-        this.quizResult.next(result);
-        return result;
-      }),
-      catchError(error => {
-        console.error('Error submitting quiz:', error);
-        // Fallback to practice mode calculation if online submission fails
-        return this.calculatePracticeResult();
-      })
-    );
+    // For online mode, first check if it's quiz time
+    return new Observable(observer => {
+      this.checkQuizTime().subscribe({
+        next: (result) => {
+          if (result.canStart) {
+            // If it's quiz time, fetch the questions
+            this.fetchQuestions().subscribe({
+              next: (questions) => {
+                this.currentQuiz = questions;
+                this.currentAnswers = new Array(questions.length).fill(-1);
+                observer.next(questions);
+                observer.complete();
+              },
+              error: (error) => {
+                console.error('Error fetching questions:', error);
+                observer.error(new Error('Failed to load quiz questions. Please try again later.'));
+              }
+            });
+          } else {
+            // If it's not quiz time, throw an error with the next available time
+            const error = new Error(result.message || 'The quiz is not available at this time.');
+            if (result.nextQuizTime) {
+              error.message += ` Next quiz time: ${result.nextQuizTime}`;
+            }
+            observer.error(error);
+          }
+        },
+        error: (error) => {
+          console.error('Error checking quiz time:', error);
+          observer.error(new Error('Unable to verify quiz time. Please try again later.'));
+        }
+      });
+    });
   }
 
   // Get the quiz result as an observable
@@ -302,6 +235,7 @@ export class QuizService {
     this.currentQuiz = [];
     this.currentAnswers = [];
     this.quizStartTime = 0;
+    this.quizMode = 'practice';
     this.quizResult.next(null);
   }
 }
