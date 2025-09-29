@@ -1,60 +1,96 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
-import { Router, ActivatedRoute } from '@angular/router';
-import { Subscription, of, forkJoin, Observable, interval } from 'rxjs';
-import { delay, switchMap, catchError } from 'rxjs/operators';
+import {
+  Component,
+  OnInit,
+  OnDestroy,
+  ChangeDetectorRef,
+} from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
+import { Subscription, Observable, interval } from 'rxjs';
 import { AuthService } from '../../services/auth.service';
 import { QuestionService, Question } from '../../services/api/question.service';
-import { ResponseService, SubmitResponseDto } from '../../services/api/response.service';
-import { ScoreService, Score } from '../../services/api/score.service';
+import { ScoreService } from '../../services/api/score.service';
+import { SocketService, OnlineUser } from '../../services/socket.service';
+
+interface Score {
+  _id: string;
+  userId: string;
+  score: number;
+  correctAnswers: number;
+  totalQuestions: number;
+  timeSpent: number;
+  createdAt: string;
+  updatedAt: string;
+}
 
 @Component({
   selector: 'app-quiz',
   templateUrl: './quiz.component.html',
-  styleUrls: ['./quiz.component.scss']
+  styleUrls: ['./quiz.component.scss'],
 })
 export class QuizComponent implements OnInit, OnDestroy {
+  /*** State ***/
   questions: Question[] = [];
   currentQuestionIndex = 0;
   answers: (number | null)[] = [];
   selectedAnswer: number | null = null;
+
   quizStarted = false;
   quizFinished = false;
-  watchMode = false; // Track if in watch mode after wrong answer
+  watchMode = false;
   quizResult: Score | null = null;
+
   loading = false;
   error: string | null = null;
   mode: 'solo' | 'online' = 'solo';
-  timeRemaining = 30; // 1 minute per question in online mode
-  questionTimeLimit = 30; // 1 minute in seconds
+  modeFromRoute = false;
+
+  /*** Timers & Progress ***/
+  questionTimeLimit = 30;
   totalTime = 0;
+  timeRemaining = 30;
   progress = 0;
   waitingForAnswer = false;
-  answerWaitTime = 30; // 1 minute wait time in seconds
-  answerWaitTimer: any = null;
-  modeFromRoute = false;
+  answerWaitTime = 30;
+
+  /*** User ***/
   isAuthenticated = false;
+  currentUserId: string | null = null;
+
+  /*** Winner & Game Over State ***/
+  gameWinner: { userId: string, username: string } | null = null;
+  gameOver = false;
+  isWinner = false;
+
+  /*** Internals ***/
   private quizSubscription: Subscription | null = null;
   private timerSubscription: Subscription | null = null;
-  private quizStartTime: number = 0;
-  private currentUserId: string | null = null;
-
+  private answerWaitTimer: any = null;
+  private quizStartTime = 0;
+  private questionStartTime = 0;
+  private quizId = '';
+  private socketSubscriptions = new Subscription();
+  onlineUsers: OnlineUser[] = [];
+  isSocketConnected = false;
+  
   constructor(
     private authService: AuthService,
     private questionService: QuestionService,
-    private responseService: ResponseService,
     private scoreService: ScoreService,
     private router: Router,
-    private route: ActivatedRoute
+    private route: ActivatedRoute,
+    private cdr: ChangeDetectorRef,
+    private socketService: SocketService,
   ) {
     this.isAuthenticated = this.authService.isAuthenticated();
-    const currentUser = this.authService.currentUserValue;
-    this.currentUserId = currentUser?._id || null;
+    this.currentUserId = this.authService.currentUserValue?._id || null;
   }
 
+  /* ------------------- Lifecycle ------------------- */
+
   ngOnInit(): void {
-    this.route.params.subscribe(params => {
+    this.route.params.subscribe((params) => {
       let mode = params['mode'] as 'solo' | 'online' | undefined;
-      // Support static routes without :mode param, e.g., 'quiz/solo'
+
       if (!mode) {
         const path = this.route.snapshot.routeConfig?.path || '';
         if (path.includes('quiz/solo')) mode = 'solo';
@@ -73,22 +109,20 @@ export class QuizComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.cleanupSubscriptions();
-    if (this.answerWaitTimer) {
-      clearInterval(this.answerWaitTimer);
-    }
+    if (this.answerWaitTimer) clearInterval(this.answerWaitTimer);
+    
+    // Clean up socket subscriptions
+    this.socketSubscriptions.unsubscribe();
   }
 
-  // Navigate to the appropriate home page based on authentication status
+  /* ------------------- Navigation ------------------- */
+
   navigateToHome(): void {
-    if (this.isAuthenticated) {
-      this.router.navigate(['/home']);
-    } else {
-      this.router.navigate(['/']);
-    }
+    this.router.navigate([this.isAuthenticated ? '/home' : '/']);
   }
-
 
   restartQuiz(): void {
+    // Reset all quiz state
     this.quizStarted = false;
     this.quizFinished = false;
     this.quizResult = null;
@@ -98,207 +132,440 @@ export class QuizComponent implements OnInit, OnDestroy {
     this.progress = 0;
     this.error = null;
     this.watchMode = false;
-    this.timeRemaining = this.mode === 'online' ? this.questionTimeLimit : this.totalTime;
-    this.quizStartTime = Date.now();
+    this.gameWinner = null;
+    this.gameOver = false;
+    this.isWinner = false;
+    this.loading = true;
+    
+    // Reload questions for a fresh quiz
+    this.questionService.getQuestions(10).subscribe({
+      next: (questions: Question[]) => {
+        this.questions = questions;
+        this.answers = new Array(questions.length).fill(null);
+        this.totalTime = questions.length * (this.mode === 'online' ? this.questionTimeLimit : 30);
+        this.timeRemaining = this.mode === 'online' ? this.questionTimeLimit : this.totalTime;
+        this.quizStarted = true;
+        this.loading = false;
+        this.quizStartTime = Date.now();
+        this.startTimer(this.totalTime);
+      },
+      error: (error) => {
+        console.error('Failed to load questions:', error);
+        this.loading = false;
+        this.error = 'Failed to load questions. Please try again.';
+        this.quizStarted = false;
+        this.cdr.detectChanges();
+      }
+    });
   }
 
-  private cleanupSubscriptions(): void {
-    if (this.quizSubscription) {
-      this.quizSubscription.unsubscribe();
-      this.quizSubscription = null;
-    }
-    this.stopTimer();
-  }
+  /* ------------------- Quiz Flow ------------------- */
 
   private initializeQuiz(): void {
-    // Check if online mode requires authentication
-    if (this.mode === 'online' && !this.authService.isAuthenticated()) {
-      // Include returnUrl so after OTP the user comes back here
-      this.router.navigate(['/login'], {
-        queryParams: { returnUrl: '/quiz/online' }
-      });
+    if (this.mode === 'online' && !this.isAuthenticated) {
+      this.router.navigate(['/login'], { queryParams: { returnUrl: '/quiz/online' } });
       return;
     }
+  
+    // Socket: only for online mode
+    if (this.mode === 'online') {
+      // Ensure connection
+      this.socketService.connect();
+  
+      // Clear previous socket subs
+      this.socketSubscriptions.unsubscribe();
+      this.socketSubscriptions = new Subscription();
+  
+      // Subscribe to users
+      const usersSub = this.socketService.getOnlineUsers().subscribe(users => {
+        this.onlineUsers = users;
+      });
+  
+      // Subscribe to connection status
+      const statusSub = this.socketService.getConnectionStatus().subscribe(connected => {
+        const wasConnected = this.isSocketConnected;
+        this.isSocketConnected = connected;
+  
+        // On first connect (or reconnect), request list
+        if (connected && !wasConnected) {
+          setTimeout(() => this.socketService.requestOnlineUsers(), 300);
+        }
+      });
 
-    // Start the quiz with the current mode
+      // Listen for player elimination events
+      const playerEliminatedSub = this.socketService.onEvent('playerEliminated')
+        .subscribe((data: any) => {
+          if (data.userId === this.currentUserId) return; // Skip self
+          console.log(`Player ${data.userId} was eliminated: ${data.reason}`);
+        });
+
+      // Listen for correct answers from other players
+      const playerAnsweredSub = this.socketService.onEvent('playerAnswered')
+        .subscribe((data: any) => {
+          if (data.userId === this.currentUserId) return; // Skip self
+          console.log(`Player ${data.userId} answered question ${data.questionIndex} correctly`);
+        });
+  
+      // Listen for player win events
+      const playerWinSub = this.socketService.onEvent('playerWin')
+        .subscribe((data: any) => {
+          if (data.userId === this.currentUserId) return; // Skip self
+          console.log(`Player ${data.username} won the game!`);
+          this.handleOtherPlayerWin(data);
+        });
+
+      // Listen for game over events
+      const gameOverSub = this.socketService.onEvent('gameOver')
+        .subscribe((data: any) => {
+          this.handleGameOver(data.winner);
+        });
+
+      this.socketSubscriptions.add(usersSub);
+      this.socketSubscriptions.add(statusSub);
+      this.socketSubscriptions.add(playerEliminatedSub);
+      this.socketSubscriptions.add(playerAnsweredSub);
+      this.socketSubscriptions.add(playerWinSub);
+      this.socketSubscriptions.add(gameOverSub);
+    }
+  
     this.startQuiz(this.mode);
+  }
+
+  private handleOtherPlayerWin(winnerData: any): void {
+    // Show notification that another player is about to win
+    this.error = `${winnerData.username} answered the final question correctly!`;
+    this.cdr.detectChanges();
+  }
+  
+  private handleGameOver(winner: { userId: string, username: string } | null): void {
+    if (this.gameOver) return;
+    
+    this.gameOver = true;
+    this.gameWinner = winner;
+    this.isWinner = winner ? winner.userId === this.currentUserId : false;
+    
+    // Stop all timers
+    this.stopTimer();
+    
+    const timeSpent = Math.max(1, Math.floor((Date.now() - this.quizStartTime) / 1000));
+    
+    this.calculateLocalScore(timeSpent).subscribe({
+      next: (score) => {
+        this.quizResult = { ...score, timeSpent };
+        this.quizFinished = true;
+        this.quizStarted = false;
+        this.loading = false;
+        
+        if (!winner) {
+          this.error = "Game Over! It's a draw - no winner this round.";
+        }
+        
+        this.cdr.detectChanges();
+      }
+    });
+    
+    this.scrollToTop();
+    this.cdr.detectChanges();
   }
 
   startQuiz(mode: 'solo' | 'online' = 'solo'): void {
     this.mode = mode;
     this.loading = true;
-    this.error = null;
-
-    // Reset quiz state
     this.quizStarted = true;
     this.quizFinished = false;
     this.quizResult = null;
     this.currentQuestionIndex = 0;
-    this.selectedAnswer = null;
     this.answers = [];
+    this.selectedAnswer = null;
     this.progress = 0;
-    this.quizStartTime = Date.now();
-
-    // For online mode, check quiz time first
-    if (this.mode === 'online') {
-      this.checkQuizTime();
-    } else {
-      // For solo mode, load questions directly
-      this.loadQuestions();
-    }
-  }
-
-  private checkQuizTime(): void {
-    this.loading = true;
     this.error = null;
-
-    // This is a placeholder - implement actual quiz time check with your service
-    // Example:
-    // this.quizService.checkQuizTime().subscribe({
-    //   next: (result) => {
-    //     if (result.canStart) {
-    //       this.loadQuestions();
-    //     } else {
-    //       this.loading = false;
-    //       this.quizStarted = false;
-    //       this.error = result.message || 'The quiz is not available at this time.';
-    //       if (result.nextQuizTime) {
-    //         this.error += ` Next quiz time: ${result.nextQuizTime}`;
-    //       }
-    //     }
-    //   },
-    //   error: (error) => {
-    //     console.error('Error checking quiz time:', error);
-    //     this.loading = false;
-    //     this.quizStarted = false;
-    //     this.error = 'Failed to check quiz availability. Please try again later.';
-    //   }
-    // });
-
-    // For now, just load questions
+    this.gameWinner = null;
+    this.gameOver = false;
+    this.isWinner = false;
+    this.quizStartTime = Date.now();
     this.loadQuestions();
   }
 
   private loadQuestions(): void {
-    this.loading = true;
-    
-    // Load questions based on the current mode
     this.questionService.getQuestions(10).subscribe({
-      next: (questions: Question[]) => {
+      next: (questions) => {
         this.questions = questions;
         this.answers = new Array(questions.length).fill(null);
-        
-        if (this.mode === 'online') {
-          // For online mode, we'll use 1 minute per question
-          this.totalTime = questions.length * this.questionTimeLimit;
-          this.timeRemaining = this.questionTimeLimit; // Start with 1 minute for the first question
-        } else {
-          // For solo mode, use total time calculation
-          this.totalTime = questions.length * 30; // 30 seconds per question
-          this.timeRemaining = this.totalTime;
-        }
-        
+
+        this.totalTime = questions.length * (this.mode === 'online' ? this.questionTimeLimit : 30);
+        this.timeRemaining = this.mode === 'online' ? this.questionTimeLimit : this.totalTime;
+
         this.startTimer(this.totalTime);
         this.loading = false;
       },
-      error: (error: any) => {
-        console.error('Error loading questions:', error);
+      error: () => {
         this.loading = false;
         this.error = 'Failed to load questions. Please try again.';
         this.quizStarted = false;
-      }
+      },
     });
   }
 
-  private handleError(error: any, context: 'load' | 'submit' = 'load'): void {
-    console.error('Quiz error:', error);
-    this.loading = false;
-    
-    let errorMessage = 'An error occurred. ';
-    if (context === 'load') {
-      errorMessage += 'Failed to load questions. ';
-    } else {
-      errorMessage += 'Failed to submit your answers. ';
-    }
-    errorMessage += 'Please try again later.';
-    
-    this.error = errorMessage;
-    this.quizStarted = false;
-    
-    if (context === 'load') {
-      this.error = 'Failed to load quiz. ' + 
-        (error?.error?.message || 'Please try again later.');
-    } else {
-      // For submit/processing errors, we'll try to show local results
-      this.error = 'Failed to process quiz results. Showing local results instead.';
-      
-      // Calculate and show local results as fallback
-      const timeSpent = Math.max(1, Math.floor((Date.now() - this.quizStartTime) / 1000));
-      this.calculateLocalScore(timeSpent).subscribe(score => {
-        this.quizResult = score;
-      });
-    }
-  }
-
-  private finishQuiz(): void {
-    this.quizFinished = true;
+  private submitQuiz(): void {
+    if (this.quizFinished || this.loading) return;
+    this.loading = true;
     this.stopTimer();
+
+    const timeSpent = Math.max(1, Math.floor((Date.now() - this.quizStartTime) / 1000));
+
+    this.calculateLocalScore(timeSpent).subscribe({
+      next: (score) => this.finishQuizWithScore(score, timeSpent),
+      error: () => {
+        const fallback: Score = {
+          _id: 'local-' + Date.now(),
+          userId: this.currentUserId || 'anonymous',
+          score: 0,
+          correctAnswers: 0,
+          totalQuestions: this.questions.length,
+          timeSpent,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        this.finishQuizWithScore(fallback, timeSpent);
+        this.error = 'Error calculating final score. Showing partial results.';
+      },
+    });
   }
 
-  // Timer and progress methods
+  private finishQuizWithScore(score: Score, timeSpent: number): void {
+    this.quizResult = { ...score, timeSpent };
+    this.quizFinished = true;
+    this.quizStarted = false;
+    this.loading = false;
+    this.stopTimer();
+
+    if (this.mode === 'online' && this.currentUserId) this.saveScore(score, timeSpent);
+
+    this.scrollToTop();
+    this.cdr.detectChanges();
+  }
+
+  /* ------------------- Timer Logic ------------------- */
+
   private startTimer(duration: number): void {
     this.stopTimer();
     this.timeRemaining = duration;
-
-    this.timerSubscription = interval(1000).subscribe({
-      next: () => {
-        if (this.timeRemaining > 0) {
-          this.timeRemaining--;
-          this.updateProgress();
-        } else {
+    this.questionStartTime = Date.now();
+  
+    this.timerSubscription = interval(1000).subscribe(() => {
+      // Don't update timer if in watch mode or game is over
+      if (this.watchMode || this.gameOver) {
+        this.stopTimer();
+        return;
+      }
+  
+      if (this.mode === 'online') {
+        const elapsed = Math.floor((Date.now() - this.questionStartTime) / 1000);
+        this.timeRemaining = Math.max(0, this.questionTimeLimit - elapsed);
+  
+        if (this.timeRemaining <= 0) {
+          // Time's up - now check all answers and eliminate wrong answers
           this.stopTimer();
-          this.mode === 'online' ? this.submitQuiz() : this.nextQuestion();
+          
+          // If this is the last question and no one won yet
+          const isLastQuestion = this.currentQuestionIndex === this.questions.length - 1;
+          if (isLastQuestion && !this.gameOver) {
+            // LAST QUESTION SPECIAL HANDLING
+            const playerAnswered = this.answers[this.currentQuestionIndex] !== null;
+            
+            if (playerAnswered) {
+              const current = this.questions[this.currentQuestionIndex];
+              const selectedAnswer = this.answers[this.currentQuestionIndex];
+              
+              if (selectedAnswer !== null && selectedAnswer !== undefined) {
+                const isCorrect = current.options[selectedAnswer]?.isCorrect;
+                if (isCorrect) {
+                  // Player answered correctly on last question - they win!
+                  this.declareWinner();
+                  return;
+                } else {
+                  // Wrong answer on last question - eliminate
+                  this.eliminatePlayer("Wrong answer on final question! Game over.");
+                  // On last question, if everyone is eliminated, we need to handle draw
+                  this.handleDrawScenario();
+                  return;
+                }
+              }
+            }
+            
+            // If we reach here, no one answered the last question correctly before time expired
+            // This is a draw scenario - no winner
+            this.handleDrawScenario();
+            return;
+          }
+          
+          // For non-last questions, proceed with normal elimination logic
+          const playerAnswered = this.answers[this.currentQuestionIndex] !== null;
+          
+          if (playerAnswered) {
+            // Check if the answer was correct
+            const current = this.questions[this.currentQuestionIndex];
+            const selectedAnswer = this.answers[this.currentQuestionIndex];
+            
+            if (selectedAnswer !== null && selectedAnswer !== undefined) {
+              const isCorrect = current.options[selectedAnswer]?.isCorrect;
+              
+              if (!isCorrect) {
+                // Wrong answer - eliminate now that time is up
+                this.eliminatePlayer("Wrong answer! You've been eliminated.");
+                
+                if (this.socketService.isConnected() && this.currentUserId) {
+                  this.socketService.emitPlayerAnswered({
+                    userId: this.currentUserId,
+                    questionIndex: this.currentQuestionIndex,
+                    isCorrect: false
+                  });
+                }
+              } else {
+                // Correct answer - notify server
+                if (this.socketService.isConnected() && this.currentUserId) {
+                  this.socketService.emitPlayerAnswered({
+                    userId: this.currentUserId,
+                    questionIndex: this.currentQuestionIndex,
+                    isCorrect: true
+                  });
+                }
+              }
+            }
+          } else {
+            // No answer - eliminate for not answering
+            this.answers[this.currentQuestionIndex] = -1;
+            this.eliminatePlayer("Time's up! You've been eliminated for not answering.");
+          }
+          
+          // Wait a moment to show feedback, then proceed (only for non-last questions)
+          setTimeout(() => {
+            if (!this.watchMode && this.currentQuestionIndex < this.questions.length - 1) {
+              this.nextQuestion();
+            } else if (this.watchMode && this.currentQuestionIndex < this.questions.length - 1) {
+              this.nextQuestion();
+            } else {
+              this.submitQuiz();
+            }
+          }, 3000);
         }
-      },
-      error: (error) => console.error('Timer error:', error)
+      } else {
+        // Solo mode timer logic remains the same
+        this.timeRemaining--;
+        if (this.timeRemaining <= 0) {
+          this.stopTimer();
+          this.nextQuestion();
+        }
+      }
+      this.updateProgress();
     });
   }
 
-
+  private stopTimer(): void {
+    this.timerSubscription?.unsubscribe();
+    this.timerSubscription = null;
+  }
 
   private updateProgress(): void {
-    if (!this.questions || this.questions.length === 0) {
+    if (!this.questions.length) {
       this.progress = 0;
       return;
     }
-    
+
     if (this.mode === 'online') {
       this.progress = Math.round(((this.currentQuestionIndex + 1) / this.questions.length) * 100);
     } else {
-      const timeElapsed = this.totalTime - this.timeRemaining;
-      this.progress = this.totalTime > 0 
-        ? Math.min(100, Math.round((timeElapsed / this.totalTime) * 100))
+      const elapsed = this.totalTime - this.timeRemaining;
+      this.progress = this.totalTime
+        ? Math.min(100, Math.round((elapsed / this.totalTime) * 100))
         : 0;
     }
   }
 
-  // Navigation methods
+
+
+
+  /////////////Draw scenario //////////
+
+  private handleDrawScenario(): void {
+    if (this.gameOver) return;
+    
+    this.gameOver = true;
+    this.stopTimer();
+    
+    // No winner - it's a draw
+    const timeSpent = Math.max(1, Math.floor((Date.now() - this.quizStartTime) / 1000));
+    
+    // Notify all players that it's a draw
+    if (this.socketService.isConnected()) {
+      this.socketService.emitGameOver({
+        winner: null // null indicates draw
+      });
+    }
+    
+    // Calculate final score
+    this.calculateLocalScore(timeSpent).subscribe({
+      next: (score) => {
+        this.quizResult = { ...score, timeSpent };
+        this.quizFinished = true;
+        this.quizStarted = false;
+        this.loading = false;
+        this.error = "Time's up! No one answered the final question correctly. It's a draw!";
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+
+  private eliminatePlayer(reason: string): void {
+    if (this.watchMode) return;
+    
+    this.watchMode = true;
+    this.error = reason;
+    // Don't stop timer - let it continue so player can see what happens
+    // this.stopTimer();
+    
+    // Notify server that this player is eliminated
+    if (this.socketService.isConnected() && this.currentUserId) {
+      this.socketService.emitPlayerEliminated({
+        userId: this.currentUserId,
+        questionIndex: this.currentQuestionIndex,
+        reason: reason
+      });
+    }
+    
+    this.cdr.detectChanges();
+  }
+
+  private markQuestionAsWrong(): void {
+    if (this.mode === 'online' && this.selectedAnswer === null && !this.watchMode) {
+      this.answers[this.currentQuestionIndex] = -1;
+      this.eliminatePlayer("Time's up! You've been eliminated for not answering.");
+    }
+  }
+
+  /* ------------------- Navigation Between Questions ------------------- */
   nextQuestion(): void {
-    if (!this.questions || this.questions.length === 0) return;
+    if (!this.questions.length) return;
+  
+    // Reset selection and clear errors
+    this.selectedAnswer = null;
+    this.error = null;
     
     if (this.currentQuestionIndex < this.questions.length - 1) {
       this.currentQuestionIndex++;
       this.updateProgress();
       if (this.mode === 'online') {
-        this.timeRemaining = this.questionTimeLimit; // Reset timer for the next question
+        this.timeRemaining = this.questionTimeLimit;
+        this.questionStartTime = Date.now();
+        this.startTimer(this.questionTimeLimit);
       }
-      this.selectedAnswer = null;
+      this.selectedAnswer = this.answers[this.currentQuestionIndex];
       this.scrollToTop();
     } else {
       this.submitQuiz();
     }
   }
-
   previousQuestion(): void {
     if (this.currentQuestionIndex > 0) {
       this.currentQuestionIndex--;
@@ -312,233 +579,230 @@ export class QuizComponent implements OnInit, OnDestroy {
     if (index >= 0 && index < this.questions.length) {
       this.currentQuestionIndex = index;
       this.selectedAnswer = this.answers[this.currentQuestionIndex];
-      this.updateProgress();
       this.scrollToTop();
     }
   }
 
-  // Quiz submission methods
-  submitQuiz(): void {
-    if (this.quizFinished) return;
-    
-    this.loading = true;
-    const timeSpent = Math.max(1, Math.floor((Date.now() - this.quizStartTime) / 1000));
-    
-    // Calculate score locally first
-    this.calculateLocalScore(timeSpent).subscribe({
-      next: (score: Score) => {
-        this.quizResult = score;
-        this.quizFinished = true;
-        this.loading = false;
-        this.stopTimer();
-        this.scrollToTop();
-        
-        // If online mode and user is authenticated, save the score
-        if (this.mode === 'online' && this.currentUserId) {
-          this.saveScore(score, timeSpent);
-        }
-      },
-      error: (error: any) => this.handleError(error, 'submit')
-    });
-  }
+  /* ------------------- Answer Handling ------------------- */
 
-  private saveScore(score: Score, timeSpent: number): void {
-    if (!this.currentUserId) return;
-    
-    this.scoreService.saveScore({
-      userId: this.currentUserId,
-      score: score.score,
-      correctAnswers: score.correctAnswers,
-      totalQuestions: score.totalQuestions,
-      timeSpent: timeSpent
-    }).subscribe({
-      next: () => console.log('Score saved successfully'),
-      error: (err: any) => console.error('Error saving score:', err)
-    });
-  }
-
- 
-
-  // UI helper methods
-  private scrollToTop(): void {
-    window.scrollTo({ top: 0, behavior: 'smooth' } as ScrollToOptions);
-  }
-
-  get scorePercentage(): number {
-    return this.quizResult?.score ?? 0;
-  }
-
-  getScoreClass(score: number): string {
-    if (score >= 80) return 'excellent';
-    if (score >= 60) return 'good';
-    if (score >= 40) return 'average';
-    return 'poor';
-  }
-
-  // Answer selection
   selectAnswer(index: number): void {
-    if (this.quizFinished || this.loading || this.waitingForAnswer) return;
-    
-    // Don't allow changing answer once selected in online mode
-    if (this.mode === 'online' && this.answers[this.currentQuestionIndex] !== null) {
-      return;
-    }
-    
+    if (this.watchMode || this.answers[this.currentQuestionIndex] !== null || this.gameOver) return;
+  
     this.selectedAnswer = index;
     this.answers[this.currentQuestionIndex] = index;
-    
-    const isCorrect = index === this.questions[this.currentQuestionIndex]?.correctAnswer;
-    const timeSpent = Math.floor((Date.now() - this.quizStartTime) / 1000);
-    
-    // For online mode, start the waiting period
+  
     if (this.mode === 'online') {
-      this.waitingForAnswer = true;
-      this.startAnswerWaitTimer(() => {
-        this.processAnswer(index, isCorrect, timeSpent);
-      });
-      return;
+      const current = this.questions[this.currentQuestionIndex];
+      const isCorrect = current.options[index]?.isCorrect;
+  
+      if (isCorrect) {
+        // Check if this is the LAST QUESTION - speed race condition
+        const isLastQuestion = this.currentQuestionIndex === this.questions.length - 1;
+        
+        if (isLastQuestion) {
+          // LAST QUESTION: First correct answer wins the entire game!
+          this.declareWinner();
+          return;
+        } else {
+          // Regular question: store answer but wait for time to expire for feedback
+          this.answers[this.currentQuestionIndex] = index;
+          
+          // Notify server about correct answer (but not winner yet)
+          if (this.socketService.isConnected() && this.currentUserId) {
+            this.socketService.emitPlayerAnswered({
+              userId: this.currentUserId,
+              questionIndex: this.currentQuestionIndex,
+              isCorrect: true
+            });
+          }
+          
+          // Clear any previous error messages
+          this.error = null;
+        }
+      } else {
+        // Wrong answer - eliminate immediately on last question, otherwise wait for time
+        if (this.currentQuestionIndex === this.questions.length - 1) {
+          // Last question wrong answer - immediate elimination
+          this.eliminatePlayer("Wrong answer on final question! Game over.");
+        } else {
+          // For non-last questions, wrong answers are handled when time expires
+          // But we can clear any previous errors
+          this.error = null;
+        }
+      }
+    } else {
+      // Solo mode behavior remains the same
+      this.cdr.detectChanges();
     }
-    
-    // For solo mode, process answer immediately
-    this.processAnswer(index, isCorrect, timeSpent);
   }
 
-  private processAnswer(index: number, isCorrect: boolean, timeSpent: number): void {
-    if (!this.questions || this.questions.length === 0) return;
+  private declareWinner(): void {
+    if (this.gameOver || !this.currentUserId) return;
+  
+    this.gameOver = true;
+    this.isWinner = true;
     
-    // For online mode, check if answer is wrong first
-    if (this.mode === 'online' && !isCorrect) {
-      this.handleWrongAnswerInOnlineMode(index, timeSpent);
-      return;
+    const currentUser = this.authService.currentUserValue;
+    const winnerData = {
+      userId: this.currentUserId,
+      username: currentUser?.username || 'Unknown Player'
+    };
+    
+    this.gameWinner = winnerData;
+    
+    // Stop all timers
+    this.stopTimer();
+    
+    // Notify all other players that this player won
+    if (this.socketService.isConnected()) {
+      this.socketService.emitPlayerWin({
+        userId: this.currentUserId,
+        username: winnerData.username,
+        questionIndex: this.currentQuestionIndex
+      });
+      
+      this.socketService.emitGameOver({
+        winner: winnerData
+      });
     }
     
-    // For correct answers or solo mode
+    // Calculate and show final score
+    const timeSpent = Math.max(1, Math.floor((Date.now() - this.quizStartTime) / 1000));
+    this.calculateLocalScore(timeSpent).subscribe({
+      next: (score) => {
+        this.quizResult = { ...score, timeSpent };
+        this.quizFinished = true;
+        this.quizStarted = false;
+        this.loading = false;
+      },
+      error: () => {
+        const fallback: Score = {
+          _id: 'local-' + Date.now(),
+          userId: this.currentUserId || 'anonymous',
+          score: 100, // Winner gets 100%
+          correctAnswers: this.questions.length,
+          totalQuestions: this.questions.length,
+          timeSpent,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        this.quizResult = fallback;
+        this.quizFinished = true;
+        this.quizStarted = false;
+        this.loading = false;
+      }
+    });
+    
+    this.scrollToTop();
+    this.cdr.detectChanges();
+  }
+
+  /* ------------------- Helpers ------------------- */
+
+  private calculateLocalScore(timeSpent: number): Observable<Score> {
+    return new Observable((observer) => {
+      try {
+        const total = this.questions.length;
+        const correct = this.questions.reduce((acc, q, i) => {
+          const sel = this.answers[i];
+          return sel !== null && sel !== -1 && q.options?.[sel]?.isCorrect ? acc + 1 : acc;
+        }, 0);
+
+        const result: Score = {
+          _id: 'local-' + Date.now(),
+          userId: this.currentUserId || 'anonymous',
+          score: Math.round((correct / total) * 100),
+          correctAnswers: correct,
+          totalQuestions: total,
+          timeSpent,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+
+        observer.next(result);
+        observer.complete();
+      } catch (err) {
+        observer.error(err);
+      }
+    });
+  }
+
+  /* ------------------- UI Utilities ------------------- */
+
+  continueWatching(): void {
+    this.error = null;
     if (this.currentQuestionIndex < this.questions.length - 1) {
-      // Move to next question after a short delay
-      setTimeout(() => {
-        this.nextQuestion();
-      }, 1000);
+      this.nextQuestion();
     } else {
-      // Last question, submit the quiz
       this.submitQuiz();
     }
   }
+  
 
-  private handleWrongAnswerInOnlineMode(index: number, timeSpent: number): void {
-    this.stopTimer();
-    this.quizFinished = true;
-    
-    // Calculate final score
-    const correctAnswers = this.questions.slice(0, this.currentQuestionIndex + 1).reduce((count, q, i) => {
-      return count + (this.answers[i] === q.correctAnswer ? 1 : 0);
-    }, 0);
-    
-    const totalQuestions = this.currentQuestionIndex + 1;
-    const score = Math.round((correctAnswers / totalQuestions) * 100);
-    
-    this.quizResult = {
-      _id: 'quiz-' + Date.now(),
-      userId: this.currentUserId || 'anonymous',
-      score: score,
-      correctAnswers: correctAnswers,
-      totalQuestions: totalQuestions,
-      timeSpent: timeSpent,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+  private saveScore(score: Score, timeSpent: number): void {
+    if (!this.currentUserId) return;
+
+    const scoreData = {
+      userId: this.currentUserId,
+      quizId: this.quizId,
+      score: score.score,
+      correctAnswers: score.correctAnswers,
+      totalQuestions: score.totalQuestions,
+      timeSpent,
+      answers: this.answers.map((a, i) => ({
+        questionId: this.questions[i]?._id || '',
+        selectedOption: a,
+        isCorrect: this.questions[i]?.options?.[a ?? -1]?.isCorrect || false,
+      })),
     };
-    
-    // Save the wrong answer if user is authenticated
-    if (this.currentUserId && this.questions[this.currentQuestionIndex]?._id) {
-      const response: SubmitResponseDto = {
-        userId: this.currentUserId,
-        questionId: this.questions[this.currentQuestionIndex]._id || '',
-        answer: index,
-        isCorrect: false,
-        timeSpent: timeSpent
-      };
-      
-      this.responseService.submitResponse(response).subscribe({
-        next: () => console.log('Wrong answer response saved'),
-        error: (err: any) => console.error('Error saving wrong answer:', err)
-      });
-    }
-    
-    this.scrollToTop();
+
+    this.scoreService.saveScore(scoreData).subscribe({
+      next: (res) => console.log('Score saved:', res),
+      error: (err) => console.error('Error saving score:', err),
+    });
   }
 
-  private startAnswerWaitTimer(callback: () => void): void {
-    // Clear any existing timer
-    if (this.answerWaitTimer) {
-      clearInterval(this.answerWaitTimer);
-    }
+  private scrollToTop(): void {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
 
+  private cleanupSubscriptions(): void {
+    this.quizSubscription?.unsubscribe();
+    this.timerSubscription?.unsubscribe();
+  }
+
+  /* ------------------- UI Utilities ------------------- */
+
+  getScoreClass(score: number): string {
+    if (score >= 80) return 'score-excellent';
+    if (score >= 50) return 'score-good';
+    return 'score-poor';
+  }
+
+  getLetter(index: number): string {
+    return String.fromCharCode(65 + index);
+  }
+
+  startAnswerWaitTimer(callback: () => void): void {
+    if (this.answerWaitTimer) clearInterval(this.answerWaitTimer);
     this.waitingForAnswer = true;
-    this.answerWaitTime = 60; // Reset to 1 minute
-    
+    this.answerWaitTime = 30;
+
     this.answerWaitTimer = setInterval(() => {
       this.answerWaitTime--;
-      
       if (this.answerWaitTime <= 0) {
-        clearInterval(this.answerWaitTimer);
         this.waitingForAnswer = false;
-        this.answerWaitTime = 60; // Reset for next question
+        clearInterval(this.answerWaitTimer);
+        this.answerWaitTimer = null;
         callback();
       }
+      this.cdr.detectChanges();
     }, 1000);
-    
-    this.scrollToTop();
   }
 
-
-  private stopTimer(): void {
-    if (this.timerSubscription) {
-      this.timerSubscription.unsubscribe();
-      this.timerSubscription = null;
-    }
-  }
-
-        
-  private calculateLocalScore(timeSpent: number): Observable<Score> {
-    if (!this.questions || this.questions.length === 0) {
-      return of({
-        _id: 'local-' + Date.now(),
-        userId: this.currentUserId || 'anonymous',
-        score: 0,
-        correctAnswers: 0,
-        totalQuestions: 0,
-        timeSpent: timeSpent,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      } as Score);
-    }
-
-    const correctAnswers = this.questions.reduce((count: number, q: Question, i: number) => {
-      return count + (this.answers[i] === q.correctAnswer ? 1 : 0);
-    }, 0);
-    
-    const score = this.questions.length > 0 
-      ? Math.round((correctAnswers / this.questions.length) * 100)
-      : 0;
-    
-    this.updateProgress();
-    
-    return of({
-      _id: 'local-' + Date.now(),
-      userId: this.currentUserId || 'anonymous',
-      score: score,
-      correctAnswers: correctAnswers,
-      totalQuestions: this.questions.length,
-      timeSpent: timeSpent,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    } as Score);
-  }
-
- 
   isQuizCompletedSuccessfully(): boolean {
     if (!this.quizResult) return false;
-    const incorrect = (this.quizResult.totalQuestions || 0) - (this.quizResult.correctAnswers || 0);
+    const incorrect = this.quizResult.totalQuestions - this.quizResult.correctAnswers;
     return incorrect === 0 || (incorrect === 1 && this.quizResult.correctAnswers === 0);
   }
 }
-

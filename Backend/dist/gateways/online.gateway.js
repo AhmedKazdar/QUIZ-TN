@@ -11,22 +11,22 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.OnlineGateway = void 0;
 const websockets_1 = require("@nestjs/websockets");
+const common_1 = require("@nestjs/common");
 const socket_io_1 = require("socket.io");
 const jwt = require("jsonwebtoken");
-const user_service_1 = require("../user/user.service");
-const common_1 = require("@nestjs/common");
+const player_service_1 = require("../player/player.service");
 let OnlineGateway = class OnlineGateway {
-    userService;
+    playerService;
     server;
-    constructor(userService) {
-        this.userService = userService;
-    }
     onlineUsersMap = new Map();
+    constructor(playerService) {
+        this.playerService = playerService;
+    }
     getOnlineUsers() {
         return Array.from(this.onlineUsersMap.values());
     }
     async handleConnection(client) {
-        const token = client.handshake.auth.token;
+        const token = client.handshake.auth?.token;
         if (!token) {
             console.log('No token provided, disconnecting client:', client.id);
             client.disconnect();
@@ -34,37 +34,57 @@ let OnlineGateway = class OnlineGateway {
         }
         try {
             const payload = jwt.verify(token, process.env.JWT_SECRET || '123456');
-            const user = await this.userService.findById(payload.sub);
-            if (!user) {
-                console.log('User not found for ID:', payload.sub);
+            let player = null;
+            if (payload?.sub) {
+                try {
+                    player = await this.playerService.findById(payload.sub);
+                }
+                catch (_) {
+                    player = null;
+                }
+            }
+            if (!player && payload?.phoneNumber) {
+                player = await this.playerService.findByPhoneNumber(payload.phoneNumber);
+            }
+            if (!player) {
+                console.log('Player not found for payload:', payload);
                 client.disconnect();
                 return;
             }
-            const existingSocketId = [...this.onlineUsersMap.entries()].find(([_, username]) => username === user.username)?.[0];
-            if (existingSocketId) {
-                console.log(`User ${user.username} already connected with socket ${existingSocketId}. Replacing with new socket ${client.id}.`);
-                this.onlineUsersMap.delete(existingSocketId);
-                const oldSocket = this.server.sockets.sockets.get(existingSocketId);
-                if (oldSocket) {
-                    oldSocket.disconnect();
-                }
+            const existingEntry = [...this.onlineUsersMap.entries()]
+                .find(([_, u]) => u.userId === player._id.toString());
+            if (existingEntry) {
+                const [oldSocketId] = existingEntry;
+                console.log(`Player ${player.username || player.phoneNumber} already connected. Replacing socket.`);
+                this.onlineUsersMap.delete(oldSocketId);
+                this.server.sockets.sockets.get(oldSocketId)?.disconnect();
             }
-            this.onlineUsersMap.set(client.id, user.username);
-            console.log(`Client connected: ${user.username} (Socket ID: ${client.id})`, `Online users: ${JSON.stringify(this.getOnlineUsers())}`);
+            this.onlineUsersMap.set(client.id, {
+                userId: player._id.toString(),
+                username: player.username || player.phoneNumber,
+                socketId: client.id,
+            });
+            console.log(`Client connected: ${player.username || player.phoneNumber} (ID: ${player._id})`);
+            this.server.emit('userConnected', {
+                userId: player._id.toString(),
+                username: player.username || player.phoneNumber,
+                socketId: client.id,
+            });
             this.broadcastOnlineUsers();
         }
         catch (error) {
             console.error('Socket authentication failed:', error.message);
-            client.emit('error', {
-                message: 'Session expired, please log in again.',
-            });
+            client.emit('error', { message: 'Session expired, please log in again.' });
             client.disconnect();
         }
     }
     async handleDisconnect(client) {
-        const username = this.onlineUsersMap.get(client.id);
+        const disconnectedUser = this.onlineUsersMap.get(client.id);
         this.onlineUsersMap.delete(client.id);
-        console.log(`Client disconnected: ${username} (Socket ID: ${client.id})`, `Online users: ${JSON.stringify(this.getOnlineUsers())}`);
+        console.log(`Client disconnected: ${disconnectedUser?.username || 'Unknown'} (Socket ID: ${client.id})`);
+        if (disconnectedUser?.userId) {
+            this.server.emit('userDisconnected', disconnectedUser.userId);
+        }
         this.broadcastOnlineUsers();
     }
     broadcastOnlineUsers() {
@@ -72,21 +92,27 @@ let OnlineGateway = class OnlineGateway {
         console.log('Broadcasting online users:', users);
         this.server.emit('onlineUsers', users);
     }
+    handleGetOnlineUsers(client) {
+        client.emit('onlineUsers', this.getOnlineUsers());
+    }
 };
 exports.OnlineGateway = OnlineGateway;
 __decorate([
     (0, websockets_1.WebSocketServer)(),
     __metadata("design:type", socket_io_1.Server)
 ], OnlineGateway.prototype, "server", void 0);
+__decorate([
+    (0, websockets_1.SubscribeMessage)('getOnlineUsers'),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [socket_io_1.Socket]),
+    __metadata("design:returntype", void 0)
+], OnlineGateway.prototype, "handleGetOnlineUsers", null);
 exports.OnlineGateway = OnlineGateway = __decorate([
     (0, websockets_1.WebSocketGateway)({
-        cors: {
-            origin: '*',
-            credentials: true,
-        },
+        cors: { origin: '*', credentials: true },
         path: '/socket.io',
     }),
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [user_service_1.UserService])
+    __metadata("design:paramtypes", [player_service_1.PlayerService])
 ], OnlineGateway);
 //# sourceMappingURL=online.gateway.js.map

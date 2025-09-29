@@ -17,8 +17,8 @@ const SideBar = ({ username, role, isOpen = false, onLogout, onClose, onToggle }
 
   // Additional menu items for non-user roles
   const additionalMenuItems = [
-    { path: '/questions', icon: <FaQuestionCircle />, label: 'Questions' },
-    { path: '/responses', icon: <FaClipboardList />, label: 'Responses' },
+ /*    { path: '/questions', icon: <FaQuestionCircle />, label: 'Questions' },
+    { path: '/responses', icon: <FaClipboardList />, label: 'Responses' }, */
   ];
 
   // Combine menu items based on user role

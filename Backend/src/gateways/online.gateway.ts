@@ -3,17 +3,21 @@ import {
   WebSocketServer,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  SubscribeMessage,
 } from '@nestjs/websockets';
+import { Injectable } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import * as jwt from 'jsonwebtoken';
-import { UserService } from '../user/user.service';
-import { Injectable } from '@nestjs/common';
+import { PlayerService } from '../player/player.service';
+
+interface OnlineUser {
+  userId: string;
+  username: string;
+  socketId: string;
+}
 
 @WebSocketGateway({
-  cors: {
-    origin: '*',
-    credentials: true,
-  },
+  cors: { origin: '*', credentials: true },
   path: '/socket.io',
 })
 @Injectable()
@@ -21,16 +25,18 @@ export class OnlineGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
-  constructor(private readonly userService: UserService) {}
+  private onlineUsersMap = new Map<string, OnlineUser>();
 
-  private onlineUsersMap = new Map<string, string>(); // Socket ID -> Username
+  constructor(private readonly playerService: PlayerService) {}
 
-  getOnlineUsers(): string[] {
+  /** Returns all currently connected users. */
+  getOnlineUsers(): OnlineUser[] {
     return Array.from(this.onlineUsersMap.values());
   }
 
-  async handleConnection(client: Socket) {
-    const token = client.handshake.auth.token;
+  /** Handle new socket connection and authenticate with JWT. */
+  async handleConnection(client: Socket): Promise<void> {
+    const token = client.handshake.auth?.token;
 
     if (!token) {
       console.log('No token provided, disconnecting client:', client.id);
@@ -39,66 +45,85 @@ export class OnlineGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     try {
-      const payload: any = jwt.verify(
-        token,
-        process.env.JWT_SECRET || '123456',
-      );
-      const user = await this.userService.findById(payload.sub);
+      // Verify JWT
+      const payload: any = jwt.verify(token, process.env.JWT_SECRET || '123456');
 
-      if (!user) {
-        console.log('User not found for ID:', payload.sub);
+      // Fetch player from DB by id (sub) or phoneNumber
+      let player: any = null;
+      if (payload?.sub) {
+        try {
+          player = await this.playerService.findById(payload.sub);
+        } catch (_) {
+          player = null;
+        }
+      }
+      if (!player && payload?.phoneNumber) {
+        player = await this.playerService.findByPhoneNumber(payload.phoneNumber);
+      }
+
+      if (!player) {
+        console.log('Player not found for payload:', payload);
         client.disconnect();
         return;
       }
 
-      // Check if the user is already connected
-      const existingSocketId = [...this.onlineUsersMap.entries()].find(
-        ([_, username]) => username === user.username,
-      )?.[0];
-
-      // If the user is already connected, disconnect the old socket
-      if (existingSocketId) {
-        console.log(
-          `User ${user.username} already connected with socket ${existingSocketId}. Replacing with new socket ${client.id}.`,
-        );
-        this.onlineUsersMap.delete(existingSocketId);
-        const oldSocket = this.server.sockets.sockets.get(existingSocketId);
-        if (oldSocket) {
-          oldSocket.disconnect();
-        }
+      // If user already connected, disconnect old socket
+      const existingEntry = [...this.onlineUsersMap.entries()]
+        .find(([_, u]) => u.userId === player._id.toString());
+      if (existingEntry) {
+        const [oldSocketId] = existingEntry;
+        console.log(`Player ${player.username || player.phoneNumber} already connected. Replacing socket.`);
+        this.onlineUsersMap.delete(oldSocketId);
+        this.server.sockets.sockets.get(oldSocketId)?.disconnect();
       }
 
-      // Add user to the online users map
-      this.onlineUsersMap.set(client.id, user.username);
-      console.log(
-        `Client connected: ${user.username} (Socket ID: ${client.id})`,
-        `Online users: ${JSON.stringify(this.getOnlineUsers())}`,
-      );
-
-      // Broadcast the updated list of online users
-      this.broadcastOnlineUsers();
-    } catch (error) {
-      console.error('Socket authentication failed:', error.message);
-      client.emit('error', {
-        message: 'Session expired, please log in again.',
+      // Store new connection
+      this.onlineUsersMap.set(client.id, {
+        userId: player._id.toString(),
+        username: player.username || player.phoneNumber,
+        socketId: client.id,
       });
+
+      console.log(`Client connected: ${player.username || player.phoneNumber} (ID: ${player._id})`);
+      // Notify all clients about the newly connected user
+      this.server.emit('userConnected', {
+        userId: player._id.toString(),
+        username: player.username || player.phoneNumber,
+        socketId: client.id,
+      } as OnlineUser);
+      this.broadcastOnlineUsers();
+    } catch (error: any) {
+      console.error('Socket authentication failed:', error.message);
+      client.emit('error', { message: 'Session expired, please log in again.' });
       client.disconnect();
     }
   }
 
-  async handleDisconnect(client: Socket) {
-    const username = this.onlineUsersMap.get(client.id);
+  /** Handle socket disconnection. */
+  async handleDisconnect(client: Socket): Promise<void> {
+    const disconnectedUser = this.onlineUsersMap.get(client.id);
     this.onlineUsersMap.delete(client.id);
+
     console.log(
-      `Client disconnected: ${username} (Socket ID: ${client.id})`,
-      `Online users: ${JSON.stringify(this.getOnlineUsers())}`,
+      `Client disconnected: ${disconnectedUser?.username || 'Unknown'} (Socket ID: ${client.id})`,
     );
+    // Notify all clients about the disconnected user
+    if (disconnectedUser?.userId) {
+      this.server.emit('userDisconnected', disconnectedUser.userId);
+    }
     this.broadcastOnlineUsers();
   }
 
-  private broadcastOnlineUsers() {
+  /** Send current online users to all connected clients. */
+  private broadcastOnlineUsers(): void {
     const users = this.getOnlineUsers();
     console.log('Broadcasting online users:', users);
     this.server.emit('onlineUsers', users);
+  }
+
+  /** Handle explicit request from client to get current online users */
+  @SubscribeMessage('getOnlineUsers')
+  handleGetOnlineUsers(client: Socket): void {
+    client.emit('onlineUsers', this.getOnlineUsers());
   }
 }

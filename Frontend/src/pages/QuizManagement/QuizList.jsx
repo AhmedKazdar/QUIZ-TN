@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect,useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Table, Button, message, Space, Card, Typography, Layout } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
@@ -14,21 +14,38 @@ const QuizList = () => {
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
-const fetchQuizzes = async () => {
-  try {
-    setLoading(true);
-    const data = await quizService.findAll();
-    setQuizzes(Array.isArray(data) ? data : []);
-  } catch (error) {
-    console.error('Error fetching quizzes:', error);
-    message.error('Failed to load quizzes');
-  } finally {
-    setLoading(false);
-  }
-};
+  const fetchQuizzes = useCallback(async () => {
+    try {
+      setLoading(true);
+      console.log('Fetching quizzes...');
+      const data = await quizService.findAll();
+      console.log('Quizzes data:', data);
+      setQuizzes(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error('Error fetching quizzes:', error);
+      message.error('Failed to load quizzes');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     fetchQuizzes();
+  }, [fetchQuizzes]);
+
+
+  useEffect(() => {
+    const loadQuizzes = async () => {
+      try {
+        console.log('Fetching quizzes...');
+        const data = await quizService.findAll();
+        console.log('Quizzes data:', data);
+        setQuizzes(Array.isArray(data) ? data : []);
+      } catch (error) {
+        console.error('Error in useEffect:', error);
+      }
+    };
+    loadQuizzes();
   }, []);
 
   const handleEdit = (id) => {

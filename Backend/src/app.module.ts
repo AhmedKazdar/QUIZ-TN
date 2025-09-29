@@ -7,7 +7,6 @@ import { QuestionModule } from './question/question.module';
 import { ResponseModule } from './response/response.module';
 import { ResultModule } from './result/result.module';
 import { ScoreModule } from './score/score.module';
-import { OnlineGateway } from './gateways/online.gateway';
 import { OnlineModule } from './gateways/online.module';
 import { InfobipOtpModule } from './infobip-otp/infobip-otp.module';
 import { WebhookModule } from './webhook/webhook.module';
@@ -43,6 +42,6 @@ import { QuizModule } from './quiz/quiz.module';
     PlayerModule,
     QuizModule,
   ],
-  providers: [OnlineGateway],
+  providers: [],
 })
 export class AppModule {}

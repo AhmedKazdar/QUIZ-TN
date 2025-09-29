@@ -1,9 +1,9 @@
 import { forwardRef, Module } from '@nestjs/common';
 import { OnlineGateway } from './online.gateway';
-import { UserModule } from 'src/user/user.module';
+import { PlayerModule } from 'src/player/player.module';
 
 @Module({
-  imports: [forwardRef(() => UserModule)],
+  imports: [forwardRef(() => PlayerModule)],
   providers: [OnlineGateway],
   exports: [OnlineGateway],
 })

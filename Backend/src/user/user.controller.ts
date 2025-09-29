@@ -322,8 +322,8 @@ export class UserController {
     try {
       const onlineUsers = this.onlineGateway
         .getOnlineUsers()
-        .map((username) => ({
-          username,
+        .map((user) => ({
+          username: user.username,
         }));
       console.log(
         'API /users/online response:',

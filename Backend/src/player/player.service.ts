@@ -17,6 +17,14 @@ export class PlayerService {
     return this.playerModel.findOne({ phoneNumber }).exec();
   }
 
+  async findById(id: string): Promise<PlayerDocument | null> {
+    try {
+      return await this.playerModel.findById(id).exec();
+    } catch {
+      return null;
+    }
+  }
+
   async create(createPlayerDto: RegisterPlayerDto): Promise<PlayerDocument> {
     const { phoneNumber, username } = createPlayerDto;
 

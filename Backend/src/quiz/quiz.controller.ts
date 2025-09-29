@@ -20,12 +20,22 @@ export class QuizController {
   }
 
 
-@Get()
-@ApiOperation({ summary: 'Get all quizzes' })
-@ApiResponse({ status: 200, description: 'Returns all quizzes' })
-async findAll() {
-  return this.quizService.findAll();
-}
+  @Get()
+  @ApiOperation({ summary: 'Get all quizzes' })
+  @ApiResponse({ status: 200, description: 'Returns all quizzes' })
+  @ApiResponse({ status: 500, description: 'Internal server error' })
+  async findAll(@Query('limit') limit?: number) {
+    try {
+      const quizzes = await this.quizService.findAll(limit);
+      return { success: true, data: quizzes };
+    } catch (error) {
+      return { 
+        success: false, 
+        message: 'Failed to fetch quizzes',
+        error: error.message 
+      };
+    }
+  }
   @Post('submit')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()

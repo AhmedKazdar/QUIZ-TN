@@ -16,7 +16,6 @@ const question_module_1 = require("./question/question.module");
 const response_module_1 = require("./response/response.module");
 const result_module_1 = require("./result/result.module");
 const score_module_1 = require("./score/score.module");
-const online_gateway_1 = require("./gateways/online.gateway");
 const online_module_1 = require("./gateways/online.module");
 const infobip_otp_module_1 = require("./infobip-otp/infobip-otp.module");
 const webhook_module_1 = require("./webhook/webhook.module");
@@ -55,7 +54,7 @@ exports.AppModule = AppModule = __decorate([
             player_module_1.PlayerModule,
             quiz_module_1.QuizModule,
         ],
-        providers: [online_gateway_1.OnlineGateway],
+        providers: [],
     })
 ], AppModule);
 //# sourceMappingURL=app.module.js.map

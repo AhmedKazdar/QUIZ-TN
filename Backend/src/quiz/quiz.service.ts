@@ -161,14 +161,25 @@ export class QuizService {
     return updatedQuiz;
   }
 
-  async findAll() {
-    return this.quizModel.find().sort({ createdAt: -1 }).exec();
+  async findAll(limit?: number): Promise<Quiz[]> {
+    try {
+      let query = this.quizModel.find();
+      
+      if (limit && limit > 0) {
+        query = query.limit(limit);
+      }
+      
+      return await query.lean().exec();
+    } catch (error) {
+      console.error('Error in QuizService.findAll:', error);
+      throw new Error('Failed to fetch quizzes');
+    }
   }
 
   async delete(id: string): Promise<void> {
     const result = await this.quizModel.deleteOne({ _id: id }).exec();
     if (result.deletedCount === 0) {
-      throw new NotFoundException(`Quiz with ID ${id} not found`);
+      throw new NotFoundException('Quiz not found');
     }
   }
 }

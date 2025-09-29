@@ -1,4 +1,5 @@
 import { NgModule } from '@angular/core';
+import { CommonModule } from '@angular/common';
 import { BrowserModule } from '@angular/platform-browser';
 import { HttpClientModule, HTTP_INTERCEPTORS } from '@angular/common/http';
 import { NgbModule } from '@ng-bootstrap/ng-bootstrap';
@@ -14,6 +15,7 @@ import { QuizComponent } from './components/quiz/quiz.component';
 import { WelcomeComponent } from './components/welcome/welcome.component';
 import { QuizService } from './services/quiz.service';
 import { AuthInterceptor } from './interceptors/auth.interceptor';
+import { SocketService } from './services/socket.service';
 
 @NgModule({
   declarations: [
@@ -32,6 +34,7 @@ import { AuthInterceptor } from './interceptors/auth.interceptor';
     BrowserAnimationsModule,
     FormsModule,
     ReactiveFormsModule,
+    CommonModule,
     ToastrModule.forRoot({
       timeOut: 3000,
       positionClass: 'toast-top-right',
@@ -40,6 +43,7 @@ import { AuthInterceptor } from './interceptors/auth.interceptor';
   ],
   providers: [
     QuizService,
+    SocketService,
     {
       provide: HTTP_INTERCEPTORS,
       useClass: AuthInterceptor,

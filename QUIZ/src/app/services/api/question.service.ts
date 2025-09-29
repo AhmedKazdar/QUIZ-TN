@@ -1,22 +1,29 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable } from 'rxjs';
-import { map } from 'rxjs/operators';
+import { Observable, of } from 'rxjs';
+import { catchError, map } from 'rxjs/operators';
 import { environment } from '../../../environments/environment';
 
-interface QuestionsResponse {
-  message: string;
-  questions: Question[];
+interface ApiResponse<T> {
+  success: boolean;
+  data: T;
+  message?: string;
+}
+
+export interface AnswerOption {
+  text: string;
+  isCorrect: boolean;
 }
 
 export interface Question {
   _id: string;
-  textequestion: string;
-  type: string;
-  options?: string[];
-  correctAnswer?: number;
-  category?: string;
-  difficulty?: string;
+  question: string;
+  options: AnswerOption[];
+  createdBy?: string;
+  responses?: string[];
+  timesAnswered?: number;
+  timesAnsweredCorrectly?: number;
+  averageTimeSpent?: number;
   __v?: number;
 }
 
@@ -24,63 +31,56 @@ export interface Question {
   providedIn: 'root'
 })
 export class QuestionService {
-  private apiUrl = `${environment.apiUrl}/api/question`;
+  private apiUrl = `${environment.apiUrl}/api/quiz`;
 
   constructor(private http: HttpClient) {}
 
-  getQuestions(limit: number = 10, category?: string, difficulty?: string): Observable<Question[]> {
-    let params: any = { limit };
-    if (category) params.category = category;
-    if (difficulty) params.difficulty = difficulty;
-    
-    return this.http.get<QuestionsResponse>(`${this.apiUrl}/all`, { params })
-      .pipe(
-        map((response: QuestionsResponse) => {
-          // Add mock options to each question
-          return (response.questions || []).map(question => ({
-            ...question,
-            options: this.generateMockOptions(question.textequestion),
-            correctAnswer: 0 // First option is always correct in this mock
-          }));
-        })
-      );
+  /**
+   * Shuffles an array using the Fisher-Yates algorithm
+   * @param array The array to shuffle
+   * @returns A new shuffled array
+   */
+  private shuffleArray<T>(array: T[]): T[] {
+    const newArray = [...array];
+    for (let i = newArray.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+    }
+    return newArray;
   }
 
-  private generateMockOptions(question: string): string[] {
-    // This is a simple mock - in a real app, you'd want more sophisticated logic
-    if (question.toLowerCase().includes('president')) {
-      return [
-        'Kais Saied',
-        'Beji Caid Essebsi',
-        'Moncef Marzouki',
-        'Zine El Abidine Ben Ali'
-      ];
-    } else if (question.toLowerCase().includes('capital')) {
-      if (question.includes('France')) {
-        return ['Paris', 'London', 'Berlin', 'Madrid'];
-      } else if (question.includes('Italy')) {
-        return ['Rome', 'Milan', 'Venice', 'Naples'];
-      } else if (question.includes('Sweden')) {
-        return ['Stockholm', 'Oslo', 'Copenhagen', 'Helsinki'];
-      } else if (question.includes('Portugal')) {
-        return ['Lisbon', 'Porto', 'Madrid', 'Barcelona'];
-      }
-    } else if (question.includes('minutes')) {
-      return ['10,080', '7,200', '14,400', '5,040'];
-    } else if (question.includes('phone company')) {
-      return ['Nokia', 'Samsung', 'Apple', 'Sony'];
-    }
+  getQuestions(limit: number = 10): Observable<Question[]> {
+    return this.http.get<ApiResponse<Question[]>>(this.apiUrl, {
+      params: { limit: limit.toString() }
+    }).pipe(
+      map((response: ApiResponse<Question[]>) => {
+        if (!response.data || !Array.isArray(response.data)) {
+          console.error('Invalid response format:', response);
+          return [];
+        }
 
-    // Default mock options
-    return [
-      'Option 1',
-      'Option 2',
-      'Option 3',
-      'Option 4'
-    ];
+        // Shuffle the array of questions
+        const shuffledQuestions = this.shuffleArray(response.data);
+
+        // For each question, shuffle its options
+        return shuffledQuestions.map(question => ({
+          ...question,
+          options: this.shuffleArray(question.options || [])
+        }));
+      }),
+      catchError(error => {
+        console.error('Error fetching questions:', error);
+        return of([]);
+      })
+    );
   }
 
   getQuestionById(id: string): Observable<Question> {
-    return this.http.get<Question>(`${this.apiUrl}/${id}`);
+    return this.http.get<Question>(`${this.apiUrl}/${id}`).pipe(
+      catchError(error => {
+        console.error(`Error fetching question ${id}:`, error);
+        throw error;
+      })
+    );
   }
 }

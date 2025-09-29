@@ -196,8 +196,8 @@ let UserController = class UserController {
         try {
             const onlineUsers = this.onlineGateway
                 .getOnlineUsers()
-                .map((username) => ({
-                username,
+                .map((user) => ({
+                username: user.username,
             }));
             console.log('API /users/online response:', onlineUsers.map((u) => u.username));
             return { message: 'Online users retrieved successfully', onlineUsers };

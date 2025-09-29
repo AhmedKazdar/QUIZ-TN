@@ -26,9 +26,11 @@
     "@ng-bootstrap/ng-bootstrap": "^12.1.2",
     "@popperjs/core": "^2.11.6",
     "@types/node": "^16.18.0",
+    "@types/socket.io-client": "^3.0.0",
     "bootstrap": "^5.3.8",
     "ngx-toastr": "^14.3.0",
     "rxjs": "~7.5.0",
+    "socket.io-client": "^4.8.1",
     "tslib": "^2.3.0",
     "zone.js": "~0.11.4"
   },

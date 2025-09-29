@@ -75,7 +75,7 @@ export const quizService = {
   async findAll() {
     try {
       const response = await api.get(QUIZ_API_URL, getAuthHeaders());
-      return response.data;
+      return response.data.data; // Access the data property of the response
     } catch (error) {
       console.error('Error fetching quizzes:', error);
       throw error;

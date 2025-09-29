@@ -9,13 +9,13 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.OnlineModule = void 0;
 const common_1 = require("@nestjs/common");
 const online_gateway_1 = require("./online.gateway");
-const user_module_1 = require("../user/user.module");
+const player_module_1 = require("../player/player.module");
 let OnlineModule = class OnlineModule {
 };
 exports.OnlineModule = OnlineModule;
 exports.OnlineModule = OnlineModule = __decorate([
     (0, common_1.Module)({
-        imports: [(0, common_1.forwardRef)(() => user_module_1.UserModule)],
+        imports: [(0, common_1.forwardRef)(() => player_module_1.PlayerModule)],
         providers: [online_gateway_1.OnlineGateway],
         exports: [online_gateway_1.OnlineGateway],
     })

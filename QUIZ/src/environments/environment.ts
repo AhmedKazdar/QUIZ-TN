@@ -7,13 +7,20 @@ export const environment = {
   // Development API URL - points to the local backend server
   apiUrl: 'http://localhost:3001',
   
+  // WebSocket configuration
+  wsUrl: 'ws://localhost:3001',
+  wsReconnectionDelay: 1000,  // Time to wait before attempting to reconnect (ms)
+  wsReconnectionDelayMax: 5000,  // Maximum time to wait between reconnections (ms)
+  wsTimeout: 20000,  // Connection timeout (ms)
+  
   // Development settings
-  useMockData: true,  // Set to false to use real API in development
+  useMockData: false,  // Set to false to use real API in development
   apiTimeout: 10000,  // 10 seconds timeout for API calls
   
   // Feature flags
   enableAnalytics: false,
-  enableDebugLogging: true
+  enableDebugLogging: true,
+  enableWebSocket: true  // Enable/disable WebSocket functionality
 };
 
 /*

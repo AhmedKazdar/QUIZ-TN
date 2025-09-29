@@ -1,42 +1,34 @@
-<div class="quiz-container" *ngIf="!quizStarted && !quizFinished && !modeFromRoute">
-  <div class="quiz-start-card">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-      <h2 class="mb-0">Select Quiz Mode</h2>
-      <button class="btn btn-outline-secondary btn-sm" (click)="navigateToHome()">
-        <i class="bi bi-house-door me-1"></i> Return Home
-      </button>
-    </div>
-    <p>Choose between practice mode to test your knowledge or online mode to compete with others!</p>
-    
-    <div class="quiz-modes">
-      <div class="quiz-mode-card" (click)="startQuiz('solo')" [class.loading]="loading && mode === 'solo'">
-        <div class="mode-icon">
-          <i class="bi bi-journal-text"></i>
-        </div>
-        <h3>Solo Mode</h3>
-        <p>Test your knowledge at your own pace with instant feedback.</p>
-        <button class="btn btn-primary" [disabled]="loading">
-          <span *ngIf="loading && mode === 'solo'" class="spinner-border spinner-border-sm me-2"></span>
-          Start Solo
-        </button>
-      </div>
+<!-- Quiz Results Section -->
+<div class="quiz-container" *ngIf="quizFinished && quizResult">
+  <div class="quiz-result-card">
+    <div class="result-header" [ngClass]="getScoreClass(quizResult?.score || 0)">
       
-      <div class="quiz-mode-card" (click)="startQuiz('online')" [class.loading]="loading && mode === 'online'">
-        <div class="mode-icon">
-          <i class="bi bi-globe"></i>
+      <!-- Winner Celebration -->
+      <div *ngIf="mode === 'online'" class="winner-celebration mb-4">
+        <div *ngIf="isWinner" class="alert alert-success text-center">
+          <i class="bi bi-trophy-fill me-2" style="font-size: 2rem;"></i>
+          <h3 class="mb-2">🏆 You Won! 🏆</h3>
+          <p class="mb-0">Congratulations! You are the champion!</p>
         </div>
-        <h3>Online Mode</h3>
-        <p>Compete with others and get ranked on the leaderboard!</p>
-        <button class="btn btn-primary" [disabled]="loading">
-          <span *ngIf="loading && mode === 'online'" class="spinner-border spinner-border-sm me-2"></span>
-          Start Online Quiz
-        </button>
+        <div *ngIf="gameWinner && !isWinner" class="alert alert-info text-center">
+          <i class="bi bi-flag-fill me-2"></i>
+          <h4 class="mb-2">Game Over</h4>
+          <p class="mb-1"><strong>Winner:</strong> {{ gameWinner.username }}</p>
+          <p class="mb-0">Better luck next time!</p>
+        </div>
+        <div *ngIf="!gameWinner" class="alert alert-warning text-center">
+          <i class="bi bi-emoji-neutral me-2"></i>
+          <h4 class="mb-2">Game Over - It's a Draw!</h4>
+          <p class="mb-0">No one answered the final question correctly.</p>
+        </div>
+      </div>
+
+      <h2 *ngIf="mode === 'solo'">Quiz Completed!</h2>
+      <div class="result-score">
+        <!-- ... existing score display ... -->
       </div>
     </div>
-    
-    <button class="btn btn-outline-secondary mt-4" routerLink="/home">
-      <i class="bi bi-arrow-left me-2"></i>Back to Home
-    </button>
+    <!-- ... rest of the template ... -->
   </div>
 </div>
 
@@ -74,7 +66,7 @@
           'text-danger': timeRemaining <= 5
         }">
           <i class="bi bi-clock-history me-1"></i>
-          {{ timeRemaining | number:'2.0-0' }}s
+          Q{{ currentQuestionIndex + 1 }}: {{ timeRemaining | number:'2.0-0' }}s
         </div>
         
         <div class="quiz-mode-badge" [ngClass]="mode === 'solo' ? 'solo' : 'online'">
@@ -84,16 +76,48 @@
     </div>
     
     <div class="question-container" *ngIf="questions[currentQuestionIndex]">
-      <div class="alert alert-warning" *ngIf="watchMode" role="alert">
+      <!-- Elimination message when time runs out -->
+      <div class="alert alert-danger" *ngIf="error" role="alert">
+        <div class="d-flex align-items-center">
+          <i class="bi bi-exclamation-triangle-fill me-3" style="font-size: 1.5rem;"></i>
+          <div class="w-100">
+            <h5 class="alert-heading mb-1">You've Been Eliminated!</h5>
+            <p class="mb-3">{{ error }}</p>
+            <div class="d-flex gap-2">
+              <button class="btn btn-outline-light btn-sm" (click)="continueWatching()">
+                <i class="bi bi-eye-fill me-1"></i> Continue Watching
+              </button>
+              <button class="btn btn-outline-light btn-sm" (click)="navigateToHome()">
+                <i class="bi bi-house-door me-1"></i> Return Home
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Watch mode message when user is eliminated but not from timeout -->
+      <div class="alert alert-warning" *ngIf="watchMode && !error" role="alert">
         <div class="d-flex align-items-center">
           <i class="bi bi-eye-fill me-2"></i>
           <div>
             <h5 class="alert-heading mb-1">Watch Mode Activated</h5>
-            <p class="mb-0">You've selected a wrong answer. You can continue watching the quiz but can no longer participate.</p>
+            <p class="mb-0">You've been eliminated. You can continue watching the quiz but can no longer participate.</p>
           </div>
         </div>
       </div>
-      <h3 class="question-text">{{ questions[currentQuestionIndex].textequestion }}</h3>
+
+      <!-- Time's up message -->
+      <div class="alert alert-info" *ngIf="mode === 'online' && timeRemaining <= 0 && !quizFinished" role="alert">
+        <div class="d-flex align-items-center">
+          <i class="bi bi-clock-fill me-2"></i>
+          <div>
+            <h5 class="alert-heading mb-1">Time's Up!</h5>
+            <p class="mb-0">Proceeding to next question...</p>
+          </div>
+        </div>
+      </div>
+      
+      <h3 class="question-text">{{ questions[currentQuestionIndex].question }}</h3>
       
       <!-- Waiting message for online mode -->
       <div *ngIf="mode === 'online' && waitingForAnswer" class="waiting-container text-center my-4">
@@ -102,22 +126,21 @@
         </div>
         <h4>Waiting for other players...</h4>
       </div>
-
+      
       <div class="options-container" [class.waiting]="mode === 'online' && waitingForAnswer">
         <div *ngFor="let option of questions[currentQuestionIndex].options; let i = index" 
              class="option" 
              [class.selected]="selectedAnswer === i"
              [class.answered]="answers[currentQuestionIndex] !== null && answers[currentQuestionIndex] !== undefined"
-             [class.correct]="selectedAnswer === i && i === questions[currentQuestionIndex].correctAnswer"
-             [class.incorrect]="selectedAnswer === i && i !== questions[currentQuestionIndex].correctAnswer"
-             [class.disabled]="(answers[currentQuestionIndex] !== null && answers[currentQuestionIndex] !== undefined) || (mode === 'online' && waitingForAnswer)"
+             [class.correct]="(mode === 'solo' || timeRemaining <= 0) && answers[currentQuestionIndex] !== null && option.isCorrect"
+             [class.incorrect]="(mode === 'solo' || timeRemaining <= 0) && answers[currentQuestionIndex] !== null && selectedAnswer === i && !option.isCorrect"
              (click)="selectAnswer(i)">
-          <div class="option-number">{{ i + 1 }}</div>
-          <div class="option-text">{{ option }}</div>
-          <div class="answer-feedback" *ngIf="(selectedAnswer !== null && !waitingForAnswer) || quizFinished">
+            <div class="option-letter">{{ getLetter(i) }}. </div>
+            <div class="option-text">{{ option.text }}</div>
+          <div class="answer-feedback" *ngIf="(mode === 'solo' || timeRemaining <= 0) && ((selectedAnswer !== null && !waitingForAnswer) || quizFinished)">
             <i class="bi" [ngClass]="{
-              'bi-check-circle-fill text-success': i === questions[currentQuestionIndex].correctAnswer,
-              'bi-x-circle-fill text-danger': selectedAnswer === i && i !== questions[currentQuestionIndex].correctAnswer
+              'bi-check-circle-fill text-success': option.isCorrect,
+              'bi-x-circle-fill text-danger': selectedAnswer === i && !option.isCorrect
             }"></i>
           </div>
         </div>
@@ -151,6 +174,8 @@
       <h2 *ngIf="isQuizCompletedSuccessfully()">Quiz Completed!</h2>
       <h2 *ngIf="!isQuizCompletedSuccessfully()">Game Over!</h2>
       <p>Your Score: {{ quizResult?.score || 0 }}%</p>
+    </div>
+    
     <div class="result-score">
       <div class="score-circle" [ngClass]="getScoreClass(quizResult?.score || 0)">
         <span class="score-value">{{ quizResult?.score || 0 }}%</span>
