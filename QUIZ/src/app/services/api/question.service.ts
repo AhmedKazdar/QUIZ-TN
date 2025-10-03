@@ -37,8 +37,6 @@ export class QuestionService {
 
   /**
    * Shuffles an array using the Fisher-Yates algorithm
-   * @param array The array to shuffle
-   * @returns A new shuffled array
    */
   private shuffleArray<T>(array: T[]): T[] {
     const newArray = [...array];
@@ -49,27 +47,97 @@ export class QuestionService {
     return newArray;
   }
 
-  getQuestions(limit: number = 10): Observable<Question[]> {
-    return this.http.get<ApiResponse<Question[]>>(this.apiUrl, {
-      params: { limit: limit.toString() }
-    }).pipe(
+  /**
+   * Get all questions from the database
+   */
+  getAllQuestions(): Observable<Question[]> {
+    return this.http.get<ApiResponse<Question[]>>(`${this.apiUrl}/all`).pipe(
       map((response: ApiResponse<Question[]>) => {
         if (!response.data || !Array.isArray(response.data)) {
           console.error('Invalid response format:', response);
           return [];
         }
+        return response.data;
+      }),
+      catchError(error => {
+        console.error('Error fetching all questions:', error);
+        return of([]);
+      })
+    );
+  }
 
-        // Shuffle the array of questions
-        const shuffledQuestions = this.shuffleArray(response.data);
+  /**
+   * Get limited number of random questions (for solo mode)
+   */
+  getQuestions(limit: number = 10): Observable<Question[]> {
+    return this.getAllQuestions().pipe(
+      map((questions: Question[]) => {
+        if (!questions.length) {
+          console.warn('No questions available');
+          return [];
+        }
 
-        // For each question, shuffle its options
-        return shuffledQuestions.map(question => ({
+        const questionsToUse = questions.length <= limit ? questions : questions.slice(0, limit);
+        const shuffledQuestions = this.shuffleArray(questionsToUse);
+        const selectedQuestions = shuffledQuestions.slice(0, limit);
+
+        return selectedQuestions.map(question => ({
           ...question,
           options: this.shuffleArray(question.options || [])
         }));
       }),
       catchError(error => {
-        console.error('Error fetching questions:', error);
+        console.error('Error in getQuestions:', error);
+        return of([]);
+      })
+    );
+  }
+
+  /**
+   * Get a single random question (for online mode)
+   */
+  getSingleQuestion(): Observable<Question | null> {
+    return this.getAllQuestions().pipe(
+      map((questions: Question[]) => {
+        if (!questions.length) {
+          console.warn('No questions available');
+          return null;
+        }
+
+        const randomQuestion = this.shuffleArray(questions)[0];
+        return {
+          ...randomQuestion,
+          options: this.shuffleArray(randomQuestion.options || [])
+        };
+      }),
+      catchError(error => {
+        console.error('Error fetching single question:', error);
+        return of(null);
+      })
+    );
+  }
+
+  /**
+   * Get multiple random questions at once (alternative for online mode)
+   */
+  getRandomQuestions(count: number = 1): Observable<Question[]> {
+    return this.getAllQuestions().pipe(
+      map((questions: Question[]) => {
+        if (!questions.length) {
+          console.warn('No questions available');
+          return [];
+        }
+
+        const shuffledQuestions = this.shuffleArray(questions);
+        const selectedQuestions = shuffledQuestions.slice(0, count);
+
+        return selectedQuestions.map(question => ({
+          ...question,
+          options: this.shuffleArray(question.options || [])
+        }));
+      }),
+      catchError(error => {
+        console.error('Error fetching random questions:', error);
         return of([]);
       })
     );

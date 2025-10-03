@@ -7,15 +7,17 @@ import { AuthService } from './auth.service';
 // Define our custom event types
 declare module 'socket.io-client' {
   interface Socket {
-    // Custom events - emit
+    // Custom events - emit (add new ones)
     emit(event: 'getOnlineUsers', callback?: (users: OnlineUser[]) => void): this;
     emit(event: 'playerEliminated', data: { userId: string, questionIndex: number, reason: string }): this;
     emit(event: 'playerAnswered', data: { userId: string, questionIndex: number, isCorrect: boolean | null }): this;
     emit(event: 'playerWin', data: { userId: string, username: string, questionIndex: number }): this;
     emit(event: 'gameOver', data: { winner: { userId: string, username: string } | null }): this;
     emit(event: 'determineWinner', data: { quizId?: string, questionIndex: number }): this;
+    emit(event: 'requestQuestion', data: { quizId: string; questionIndex: number; timestamp: number }): this;
+    emit(event: 'readyForNextQuestion', data: { quizId: string; userId: string; questionIndex: number; timestamp: number }): this;
 
-    // Custom events - on
+    // Custom events - on (add new ones)
     on(event: 'onlineUsers', callback: (users: OnlineUser[]) => void): this;
     on(event: 'userConnected', callback: (user: OnlineUser) => void): this;
     on(event: 'userDisconnected', callback: (userId: string) => void): this;
@@ -24,6 +26,8 @@ declare module 'socket.io-client' {
     on(event: 'playerWin', callback: (data: { userId: string, username: string, questionIndex: number }) => void): this;
     on(event: 'gameOver', callback: (data: { winner: { userId: string, username: string } | null }) => void): this;
     on(event: 'winnerDetermined', callback: (data: { winner: { userId: string, username: string } | null }) => void): this;
+    on(event: 'newQuestion', callback: (data: { question: any; questionIndex: number; totalQuestions: number }) => void): this;
+    on(event: 'playerReady', callback: (data: { userId: string; questionIndex: number; username: string }) => void): this;
     
     // Standard socket.io events
     on(event: 'connect' | 'disconnect' | 'connect_error' | 'reconnect_attempt' | 'reconnect_failed' | 'error', 
@@ -121,6 +125,81 @@ export class SocketService implements OnDestroy {
       this.cleanup();
     }
   }
+
+
+
+
+  public emitRequestQuestion(data: { quizId: string; questionIndex: number }): void {
+    this.emit('requestQuestion', {
+      quizId: data.quizId,
+      questionIndex: data.questionIndex,
+      timestamp: Date.now()
+    });
+  }
+
+  /**
+   * Notify server that player is ready for next question
+   */
+  public emitReadyForNextQuestion(data: { quizId: string; userId: string; questionIndex: number }): void {
+    this.emit('readyForNextQuestion', {
+      quizId: data.quizId,
+      userId: data.userId,
+      questionIndex: data.questionIndex,
+      timestamp: Date.now()
+    });
+  }
+
+  /**
+   * Listen for new questions from server
+   */
+  public onNewQuestion(): Observable<{ question: any; questionIndex: number; totalQuestions: number }> {
+    return new Observable(observer => {
+      if (!this.socket) {
+        observer.error(new Error('Socket not initialized'));
+        return;
+      }
+
+      const listener = (data: { question: any; questionIndex: number; totalQuestions: number }) => {
+        console.log('📝 Received new question:', data.questionIndex);
+        observer.next(data);
+      };
+
+      this.socket.on('newQuestion', listener);
+
+      return () => {
+        if (this.socket) {
+          this.socket.off('newQuestion', listener);
+        }
+      };
+    });
+  }
+
+  /**
+   * Listen for player ready events
+   */
+  public onPlayerReady(): Observable<{ userId: string; questionIndex: number; username: string }> {
+    return new Observable(observer => {
+      if (!this.socket) {
+        observer.error(new Error('Socket not initialized'));
+        return;
+      }
+
+      const listener = (data: { userId: string; questionIndex: number; username: string }) => {
+        observer.next(data);
+      };
+
+      this.socket.on('playerReady', listener);
+
+      return () => {
+        if (this.socket) {
+          this.socket.off('playerReady', listener);
+        }
+      };
+    });
+  }
+
+
+
 
   public disconnect(): void {
     try {

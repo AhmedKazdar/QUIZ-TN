@@ -19,7 +19,6 @@ export class QuizController {
     return this.quizService.create(createQuizDto);
   }
 
-
   @Get()
   @ApiOperation({ summary: 'Get all quizzes' })
   @ApiResponse({ status: 200, description: 'Returns all quizzes' })
@@ -36,6 +35,24 @@ export class QuizController {
       };
     }
   }
+
+  @Get('all')
+  @ApiOperation({ summary: 'Get all questions without limit' })
+  @ApiResponse({ status: 200, description: 'Returns all questions' })
+  @ApiResponse({ status: 500, description: 'Internal server error' })
+  async getAllQuestions() {
+    try {
+      const questions = await this.quizService.getAllQuestions();
+      return { success: true, data: questions };
+    } catch (error) {
+      return { 
+        success: false, 
+        message: 'Failed to fetch all questions',
+        error: error.message 
+      };
+    }
+  }
+
   @Post('submit')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()

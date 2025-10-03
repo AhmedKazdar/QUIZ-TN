@@ -36,45 +36,30 @@ export class QuizService {
     return quiz;
   }
 
-  async getRandomQuestions(limit: number = 10, category?: string, difficulty?: string): Promise<QuizQuestion[]> {
-    const match: any = {};
-    if (category) match.category = category;
-    if (difficulty) match.difficulty = difficulty;
-
-    const pipeline: any[] = [
-      { $match: match },
-      { $sample: { size: limit } },
-      {
-        $project: {
-          _id: 1,
-          question: 1,
-          category: 1,
-          difficulty: 1,
-          options: {
-            $map: {
-              input: '$options',
-              as: 'option',
-              in: {
-                id: { $toString: '$$option._id' },
-                text: '$$option.text'
-              }
-            }
-          }
-        }
-      }
-    ];
-
-    const questions = await this.quizModel.aggregate(pipeline).exec();
-    
-    return questions.map(q => ({
-      id: q._id.toString(),
-      question: q.question,
-      options: q.options,
-      category: q.category,
-      difficulty: q.difficulty
-    }));
+  async getRandomQuestions(limit: number = 10): Promise<Quiz[]> {
+    try {
+      // Get ALL questions from database
+      const allQuestions = await this.quizModel.find().lean().exec();
+      
+      // Shuffle and select random questions
+      const shuffledQuestions = this.shuffleArray([...allQuestions]);
+      return shuffledQuestions.slice(0, limit);
+    } catch (error) {
+      console.error('Error in QuizService.getRandomQuestions:', error);
+      throw new Error('Failed to fetch random questions');
+    }
   }
-
+  /**
+   * Shuffle array using Fisher-Yates algorithm
+   */
+  private shuffleArray<T>(array: T[]): T[] {
+    const newArray = [...array];
+    for (let i = newArray.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+    }
+    return newArray;
+  }
   async submitResponse(response: SubmitQuizResponseDto, userId: string) {
     const quiz = await this.quizModel.findById(response.questionId);
     if (!quiz) {
@@ -105,7 +90,6 @@ export class QuizService {
       correctAnswer: quiz.options.find(opt => opt.isCorrect)?.text
     };
   }
-
 
   async getQuizStats() {
     const stats = await this.quizModel.aggregate([
@@ -175,6 +159,18 @@ export class QuizService {
       throw new Error('Failed to fetch quizzes');
     }
   }
+
+ /**
+   * Get all questions without any limit
+   */
+ async getAllQuestions(): Promise<Quiz[]> {
+  try {
+    return await this.quizModel.find().lean().exec();
+  } catch (error) {
+    console.error('Error in QuizService.getAllQuestions:', error);
+    throw new Error('Failed to fetch all questions');
+  }
+}
 
   async delete(id: string): Promise<void> {
     const result = await this.quizModel.deleteOne({ _id: id }).exec();

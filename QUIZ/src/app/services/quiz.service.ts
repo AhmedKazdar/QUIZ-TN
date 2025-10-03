@@ -10,7 +10,16 @@ export interface Question {
   options: string[];
   correctAnswer: number;
 }
+interface ApiResponse<T> {
+  success: boolean;
+  data: T;
+  message?: string;
+}
 
+export interface AnswerOption {
+  text: string;
+  isCorrect: boolean;
+}
 export interface QuizResult {
   _id?: string;
   userId: string;
