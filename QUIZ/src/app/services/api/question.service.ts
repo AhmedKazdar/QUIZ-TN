@@ -76,11 +76,11 @@ export class QuestionService {
           console.warn('No questions available');
           return [];
         }
-
-        const questionsToUse = questions.length <= limit ? questions : questions.slice(0, limit);
-        const shuffledQuestions = this.shuffleArray(questionsToUse);
+  
+        // ✅ FIX: Shuffle ALL questions first, then take the limit
+        const shuffledQuestions = this.shuffleArray([...questions]); // Create a copy first
         const selectedQuestions = shuffledQuestions.slice(0, limit);
-
+  
         return selectedQuestions.map(question => ({
           ...question,
           options: this.shuffleArray(question.options || [])
@@ -92,7 +92,6 @@ export class QuestionService {
       })
     );
   }
-
   /**
    * Get a single random question (for online mode)
    */
