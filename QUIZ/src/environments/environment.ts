@@ -6,7 +6,7 @@ export const environment = {
   production: false,
   // Development API URL - points to the local backend server
   apiUrl: 'http://localhost:3001',
-  
+  enableDevOverride: true  ,
   // WebSocket configuration
   wsUrl: 'ws://localhost:3001',
   wsReconnectionDelay: 1000,  // Time to wait before attempting to reconnect (ms)

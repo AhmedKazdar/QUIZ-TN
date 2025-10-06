@@ -4,15 +4,9 @@ import { Observable, of } from 'rxjs';
 import { catchError, map } from 'rxjs/operators';
 import { environment } from '../../../environments/environment';
 
-interface ApiResponse<T> {
-  success: boolean;
-  data: T;
-  message?: string;
-}
-
 export interface AnswerOption {
   text: string;
-  isCorrect: boolean;
+  isCorrect?: boolean; // optional when coming from some APIs
 }
 
 export interface Question {
@@ -27,17 +21,18 @@ export interface Question {
   __v?: number;
 }
 
-@Injectable({
-  providedIn: 'root'
-})
+interface ApiResponse<T> {
+  success: boolean;
+  data: T;
+  message?: string;
+}
+
+@Injectable({ providedIn: 'root' })
 export class QuestionService {
   private apiUrl = `${environment.apiUrl}/api/quiz`;
 
   constructor(private http: HttpClient) {}
 
-  /**
-   * Shuffles an array using the Fisher-Yates algorithm
-   */
   private shuffleArray<T>(array: T[]): T[] {
     const newArray = [...array];
     for (let i = newArray.length - 1; i > 0; i--) {
@@ -47,106 +42,71 @@ export class QuestionService {
     return newArray;
   }
 
-  /**
-   * Get all questions from the database
-   */
   getAllQuestions(): Observable<Question[]> {
     return this.http.get<ApiResponse<Question[]>>(`${this.apiUrl}/all`).pipe(
-      map((response: ApiResponse<Question[]>) => {
-        if (!response.data || !Array.isArray(response.data)) {
-          console.error('Invalid response format:', response);
-          return [];
-        }
-        return response.data;
-      }),
-      catchError(error => {
-        console.error('Error fetching all questions:', error);
+      map((resp) => (resp && Array.isArray(resp.data) ? resp.data : [])),
+      catchError(err => {
+        console.error('[QuestionService] getAllQuestions error', err);
         return of([]);
       })
     );
   }
 
-  /**
-   * Get limited number of random questions (for solo mode)
-   */
-  getQuestions(limit: number = 10): Observable<Question[]> {
+  getQuestions(limit = 10): Observable<Question[]> {
     return this.getAllQuestions().pipe(
-      map((questions: Question[]) => {
-        if (!questions.length) {
-          console.warn('No questions available');
-          return [];
-        }
-  
-        // ✅ FIX: Shuffle ALL questions first, then take the limit
-        const shuffledQuestions = this.shuffleArray([...questions]); // Create a copy first
-        const selectedQuestions = shuffledQuestions.slice(0, limit);
-  
-        return selectedQuestions.map(question => ({
-          ...question,
-          options: this.shuffleArray(question.options || [])
+      map((questions) => {
+        if (!questions || !questions.length) return [];
+        const shuffled = this.shuffleArray(questions);
+        return shuffled.slice(0, limit).map(q => ({
+          ...q,
+          options: this.shuffleArray(q.options || [])
         }));
       }),
-      catchError(error => {
-        console.error('Error in getQuestions:', error);
+      catchError(err => {
+        console.error('[QuestionService] getQuestions error', err);
         return of([]);
       })
     );
   }
-  /**
-   * Get a single random question (for online mode)
-   */
+
   getSingleQuestion(): Observable<Question | null> {
     return this.getAllQuestions().pipe(
-      map((questions: Question[]) => {
-        if (!questions.length) {
-          console.warn('No questions available');
-          return null;
-        }
-
-        const randomQuestion = this.shuffleArray(questions)[0];
-        return {
-          ...randomQuestion,
-          options: this.shuffleArray(randomQuestion.options || [])
-        };
+      map((questions) => {
+        if (!questions || !questions.length) return null;
+        const q = this.shuffleArray(questions)[0];
+        return { ...q, options: this.shuffleArray(q.options || []) };
       }),
-      catchError(error => {
-        console.error('Error fetching single question:', error);
+      catchError(err => {
+        console.error('[QuestionService] getSingleQuestion error', err);
         return of(null);
       })
     );
   }
 
-  /**
-   * Get multiple random questions at once (alternative for online mode)
-   */
-  getRandomQuestions(count: number = 1): Observable<Question[]> {
+  getRandomQuestions(count = 1): Observable<Question[]> {
     return this.getAllQuestions().pipe(
-      map((questions: Question[]) => {
-        if (!questions.length) {
-          console.warn('No questions available');
-          return [];
-        }
-
-        const shuffledQuestions = this.shuffleArray(questions);
-        const selectedQuestions = shuffledQuestions.slice(0, count);
-
-        return selectedQuestions.map(question => ({
-          ...question,
-          options: this.shuffleArray(question.options || [])
+      map((questions) => {
+        if (!questions || !questions.length) return [];
+        const shuffled = this.shuffleArray(questions);
+        return shuffled.slice(0, count).map(q => ({
+          ...q,
+          options: this.shuffleArray(q.options || [])
         }));
       }),
-      catchError(error => {
-        console.error('Error fetching random questions:', error);
+      catchError(err => {
+        console.error('[QuestionService] getRandomQuestions error', err);
         return of([]);
       })
     );
   }
 
-  getQuestionById(id: string): Observable<Question> {
-    return this.http.get<Question>(`${this.apiUrl}/${id}`).pipe(
-      catchError(error => {
-        console.error(`Error fetching question ${id}:`, error);
-        throw error;
+  getQuestionById(id: string): Observable<Question | null> {
+    if (!id) return of(null);
+    return this.http.get<ApiResponse<Question>>(`${this.apiUrl}/${id}`).pipe(
+      map(resp => resp?.data || null),
+      catchError(err => {
+        console.error(`[QuestionService] getQuestionById ${id} error`, err);
+        return of(null);
       })
     );
   }

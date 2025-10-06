@@ -1,16 +1,10 @@
-import {
-  Component,
-  OnInit,
-  OnDestroy,
-  ChangeDetectorRef,
-} from '@angular/core';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Subscription, Observable, interval } from 'rxjs';
 import { AuthService } from '../../services/auth.service';
 import { QuestionService, Question } from '../../services/api/question.service';
 import { ScoreService } from '../../services/api/score.service';
 import { SocketService, OnlineUser } from '../../services/socket.service';
-import { take } from 'rxjs/operators';
 
 interface Score {
   _id: string;
@@ -46,9 +40,9 @@ export class QuizComponent implements OnInit, OnDestroy {
   modeFromRoute = false;
 
   /*** Timers & Progress ***/
-  questionTimeLimit = 10;
+  questionTimeLimit = 15;
   totalTime = 0;
-  timeRemaining = 10;
+  timeRemaining = 15;
   progress = 0;
   waitingForAnswer = false;
   answerWaitTime = 10;
@@ -58,9 +52,13 @@ export class QuizComponent implements OnInit, OnDestroy {
   currentUserId: string | null = null;
 
   /*** Winner & Game Over State ***/
-  gameWinner: { userId: string, username: string } | null = null;
+  gameWinner: { userId: string; username: string } | null = null;
   gameOver = false;
   isWinner = false;
+
+  /*** Answer Feedback ***/
+  showAnswerFeedback = false;
+  currentCorrectAnswerIndex: number | null = null;
 
   /*** Internals ***/
   private quizSubscription: Subscription | null = null;
@@ -70,14 +68,16 @@ export class QuizComponent implements OnInit, OnDestroy {
   private questionStartTime = 0;
   private quizId = 'online-quiz-' + Date.now();
   private socketSubscriptions = new Subscription();
+  private routeSubscription: Subscription | null = null;
   onlineUsers: OnlineUser[] = [];
   isSocketConnected = false;
   private emergencyFallbackTimeout: any = null;
-  
+
   /*** Online Mode Specific ***/
-  private onlineQuestionsQueue: Question[] = [];
+  private onlineQuestionsQueue: { [key: number]: Question } = {};
   private currentOnlineQuestion: Question | null = null;
   private totalOnlineQuestions = 10;
+  private waitingForNextQuestion = false;
 
   constructor(
     private authService: AuthService,
@@ -86,16 +86,15 @@ export class QuizComponent implements OnInit, OnDestroy {
     private router: Router,
     private route: ActivatedRoute,
     private cdr: ChangeDetectorRef,
-    private socketService: SocketService,
+    private socketService: SocketService
   ) {
     this.isAuthenticated = this.authService.isAuthenticated();
     this.currentUserId = this.authService.currentUserValue?._id || null;
   }
 
   /* ------------------- Lifecycle ------------------- */
-
   ngOnInit(): void {
-    this.route.params.subscribe((params) => {
+    this.routeSubscription = this.route.params.subscribe((params) => {
       let mode = params['mode'] as 'solo' | 'online' | undefined;
 
       if (!mode) {
@@ -118,19 +117,20 @@ export class QuizComponent implements OnInit, OnDestroy {
     this.cleanupSubscriptions();
     if (this.answerWaitTimer) clearInterval(this.answerWaitTimer);
     if (this.emergencyFallbackTimeout) clearTimeout(this.emergencyFallbackTimeout);
-    
-    // Clean up socket subscriptions
-    this.socketSubscriptions.unsubscribe();
+
+    try {
+      this.socketSubscriptions.unsubscribe();
+    } catch (e) {}
+
+    this.routeSubscription?.unsubscribe();
   }
 
   /* ------------------- Navigation ------------------- */
-
   navigateToHome(): void {
     this.router.navigate([this.isAuthenticated ? '/home' : '/']);
   }
 
   restartQuiz(): void {
-    // Reset all quiz state
     this.quizStarted = false;
     this.quizFinished = false;
     this.quizResult = null;
@@ -143,24 +143,26 @@ export class QuizComponent implements OnInit, OnDestroy {
     this.gameWinner = null;
     this.gameOver = false;
     this.isWinner = false;
+    this.showAnswerFeedback = false;
+    this.currentCorrectAnswerIndex = null;
     this.loading = true;
-    
-    // Reset online mode specific variables
-    this.onlineQuestionsQueue = [];
+
+    this.onlineQuestionsQueue = {};
     this.currentOnlineQuestion = null;
-    
-    // Reload questions for a fresh quiz
+    this.waitingForNextQuestion = false;
+
     if (this.mode === 'solo') {
       this.questionService.getQuestions(10).subscribe({
         next: (questions: Question[]) => {
-          this.questions = questions;
-          this.answers = new Array(questions.length).fill(null);
-          this.totalTime = questions.length * 30;
+          this.questions = questions || [];
+          this.answers = new Array(this.questions.length).fill(null);
+          this.totalTime = this.questions.length * 30;
           this.timeRemaining = this.totalTime;
           this.quizStarted = true;
           this.loading = false;
           this.quizStartTime = Date.now();
           this.startTimer(this.totalTime);
+          this.cdr.detectChanges();
         },
         error: (error) => {
           console.error('Failed to load questions:', error);
@@ -168,110 +170,90 @@ export class QuizComponent implements OnInit, OnDestroy {
           this.error = 'Failed to load questions. Please try again.';
           this.quizStarted = false;
           this.cdr.detectChanges();
-        }
+        },
       });
     } else {
-      // For online mode, reinitialize the quiz
       this.startQuiz('online');
     }
   }
 
   /* ------------------- Quiz Flow ------------------- */
-
   private initializeQuiz(): void {
     if (this.mode === 'online' && !this.isAuthenticated) {
       this.router.navigate(['/login'], { queryParams: { returnUrl: '/quiz/online' } });
       return;
     }
-  
-    // Socket: only for online mode
+
     if (this.mode === 'online') {
       this.setupSocketListeners();
     }
-  
+
     this.startQuiz(this.mode);
   }
 
   private setupSocketListeners(): void {
-    // Ensure connection
     this.socketService.connect();
 
-    // Clear previous socket subs
-    this.socketSubscriptions.unsubscribe();
+    try {
+      this.socketSubscriptions.unsubscribe();
+    } catch (e) {}
     this.socketSubscriptions = new Subscription();
 
-    // Subscribe to users
-    const usersSub = this.socketService.getOnlineUsers().subscribe(users => {
-      this.onlineUsers = users;
-      console.log('👥 Online users updated:', users.length);
+    const usersSub = this.socketService.getOnlineUsers().subscribe((users) => {
+      this.onlineUsers = users || [];
+      console.log('👥 Online users updated:', this.onlineUsers.length);
+      this.cdr.detectChanges();
     });
 
-    // Subscribe to connection status
-    const statusSub = this.socketService.getConnectionStatus().subscribe(connected => {
+    const statusSub = this.socketService.getConnectionStatus().subscribe((connected) => {
       const wasConnected = this.isSocketConnected;
       this.isSocketConnected = connected;
 
-      // On first connect (or reconnect), request list
       if (connected && !wasConnected) {
         setTimeout(() => this.socketService.requestOnlineUsers(), 300);
       }
     });
 
-    // Listen for new question events
-    const newQuestionSub = this.socketService.onNewQuestion()
-      .subscribe((data: any) => {
-        console.log('📝 Received new question from server:', data);
-        this.handleNewQuestion(data);
-      });
+    const newQuestionSub = this.socketService.onNewQuestion().subscribe((data: any) => {
+      console.log('📝 Received new question from server:', data);
+      this.handleNewQuestion(data);
+    });
 
-    // Listen for winner determined events
-    const winnerDeterminedSub = this.socketService.onWinnerDetermined()
-      .subscribe((data: any) => {
-        console.log('🎉 Winner determined received in component:', data);
-        
-        // Clear emergency timeout
-        if (this.emergencyFallbackTimeout) {
-          clearTimeout(this.emergencyFallbackTimeout);
-          this.emergencyFallbackTimeout = null;
-        }
-        
-        this.handleGameOver(data.winner);
-      });
+    const winnerDeterminedSub = this.socketService.onWinnerDetermined().subscribe((data: any) => {
+      console.log('🎉 Winner determined received in component:', data);
 
-    // Listen for player elimination events
-    const playerEliminatedSub = this.socketService.onPlayerEliminated()
-      .subscribe((data: any) => {
-        if (data.userId === this.currentUserId) return; // Skip self
-        console.log(`❌ Player ${data.userId} was eliminated: ${data.reason}`);
-      });
+      if (this.emergencyFallbackTimeout) {
+        clearTimeout(this.emergencyFallbackTimeout);
+        this.emergencyFallbackTimeout = null;
+      }
 
-    // Listen for correct answers from other players
-    const playerAnsweredSub = this.socketService.onPlayerAnswered()
-      .subscribe((data: any) => {
-        if (data.userId === this.currentUserId) return; // Skip self
-        console.log(`📝 Player ${data.userId} answered question ${data.questionIndex} correctly: ${data.isCorrect}`);
-      });
+      this.handleGameOver(data?.winner);
+    });
 
-    // Listen for player win events
-    const playerWinSub = this.socketService.onPlayerWin()
-      .subscribe((data: any) => {
-        if (data.userId === this.currentUserId) return; // Skip self
-        console.log(`🏆 Player ${data.username} won the game!`);
-        this.handleOtherPlayerWin(data);
-      });
+    const playerEliminatedSub = this.socketService.onPlayerEliminated().subscribe((data: any) => {
+      if (data?.userId === this.currentUserId) return;
+      console.log(`❌ Player ${data?.userId} was eliminated: ${data?.reason}`);
+    });
 
-    // Listen for game over events
-    const gameOverSub = this.socketService.onGameOver()
-      .subscribe((data: any) => {
-        console.log('🛑 Game over event received:', data);
-        this.handleGameOver(data.winner);
-      });
+    const playerAnsweredSub = this.socketService.onPlayerAnswered().subscribe((data: any) => {
+      if (data?.userId === this.currentUserId) return;
+      console.log(`📝 Player ${data?.userId} answered question ${data?.questionIndex} correctly: ${data?.isCorrect}`);
+    });
 
-    // Listen for player ready events
-    const playerReadySub = this.socketService.onPlayerReady()
-      .subscribe((data: any) => {
-        console.log(`✅ Player ${data.username} is ready for question ${data.questionIndex}`);
-      });
+    const playerWinSub = this.socketService.onPlayerWin().subscribe((data: any) => {
+      if (data?.userId === this.currentUserId) return;
+      console.log(`🏆 Player ${data?.username} won the game!`);
+      this.handleOtherPlayerWin(data);
+    });
+
+    const gameOverSub = this.socketService.onGameOver().subscribe((data: any) => {
+      console.log('🛑 Game over event received:', data);
+      this.handleGameOver(data?.winner);
+    });
+
+    const playerReadySub = this.socketService.onPlayerReady().subscribe((data: any) => {
+      console.log(`✅ Player ${data?.username} is ready for question ${data?.questionIndex}`);
+    });
 
     this.socketSubscriptions.add(usersSub);
     this.socketSubscriptions.add(statusSub);
@@ -284,103 +266,111 @@ export class QuizComponent implements OnInit, OnDestroy {
     this.socketSubscriptions.add(playerReadySub);
   }
 
-  /**
-   * Handle new question received from server in online mode
-   */
   private handleNewQuestion(data: any): void {
     if (this.mode !== 'online') return;
 
-    const { question, questionIndex, totalQuestions } = data;
-    this.currentOnlineQuestion = question;
-    this.totalOnlineQuestions = totalQuestions || 10;
+    const { question, questionIndex, totalQuestions } = data || {};
 
-    console.log(`🔄 Processing question ${questionIndex} of ${this.totalOnlineQuestions}`);
+    console.log(`🔄 Processing question ${questionIndex} of ${totalQuestions}`);
 
-    // If this is the first question, initialize the quiz
-    if (this.questions.length === 0 && questionIndex === 0) {
-      this.questions = [question];
-      this.answers = [null];
-      this.currentQuestionIndex = 0;
-      this.quizStarted = true;
-      this.loading = false;
-      this.startTimer(this.questionTimeLimit);
-      console.log('✅ Online quiz started with first question');
-    } else if (questionIndex > this.currentQuestionIndex) {
-      // This is a future question, add to queue
-      this.onlineQuestionsQueue[questionIndex] = question;
-      console.log(`📥 Queued question ${questionIndex}`);
-    } else if (questionIndex === this.currentQuestionIndex) {
-      // This is the current question we're waiting for
-      this.questions[questionIndex] = question;
-      this.answers[questionIndex] = null;
-      this.loading = false;
-      console.log(`✅ Loaded current question ${questionIndex}`);
+    if (typeof totalQuestions === 'number') {
+      this.totalOnlineQuestions = totalQuestions;
     }
 
+    if (!question || typeof questionIndex !== 'number') {
+      console.warn('handleNewQuestion: invalid payload', data);
+      return;
+    }
+
+    if (!this.questions) this.questions = [];
+    if (!this.answers) this.answers = [];
+
+    if (questionIndex === this.currentQuestionIndex) {
+      this.questions[questionIndex] = question;
+      this.answers[questionIndex] = null;
+      this.currentOnlineQuestion = question;
+      this.loading = false;
+      this.waitingForNextQuestion = false;
+
+      console.log(`✅ Loaded current question ${questionIndex}`);
+
+      this.timeRemaining = this.questionTimeLimit;
+      this.questionStartTime = Date.now();
+      this.startTimer(this.questionTimeLimit);
+    } else if (questionIndex > this.currentQuestionIndex) {
+      this.onlineQuestionsQueue[questionIndex] = question;
+      console.log(`📥 Queued question ${questionIndex} for later`);
+    }
+
+    this.updateProgress();
     this.cdr.detectChanges();
   }
 
   private handleOtherPlayerWin(winnerData: any): void {
-    // Show notification that another player is about to win
-    this.error = `${winnerData.username} answered the final question correctly!`;
+    this.error = `${winnerData?.username || 'A player'} answered the final question correctly!`;
     this.cdr.detectChanges();
   }
-  
-  private handleGameOver(winner: { userId: string, username: string } | null): void {
+
+  private handleGameOver(winner: { userId: string; username: string } | null): void {
     if (this.gameOver) return;
-    
+
     console.log('🎯 Handling game over with winner:', winner);
-    
+
     this.gameOver = true;
     this.gameWinner = winner;
-    this.isWinner = winner ? winner.userId === this.currentUserId : false;
-    
-    // Stop all timers
+    this.isWinner = !!(winner && winner.userId === this.currentUserId);
+
     this.stopTimer();
-    
+
     const timeSpent = Math.max(1, Math.floor((Date.now() - this.quizStartTime) / 1000));
-    
+
     this.calculateLocalScore(timeSpent).subscribe({
       next: (score) => {
+        if (!score || !Number.isFinite(score.score)) {
+          this.handleEmergencyFallback(timeSpent);
+          return;
+        }
+
         this.quizResult = { ...score, timeSpent };
         this.quizFinished = true;
         this.quizStarted = false;
         this.loading = false;
-        
+
         if (!winner) {
           this.error = "Game Over! It's a draw - no winner this round.";
         } else {
           this.error = null;
         }
-        
+
         console.log('✅ Quiz completed successfully');
         this.cdr.detectChanges();
       },
       error: (err) => {
         console.error('Error calculating score:', err);
         this.handleEmergencyFallback(timeSpent);
-      }
+      },
     });
-    
+
     this.scrollToTop();
   }
 
   private handleEmergencyFallback(timeSpent: number): void {
+    const totalQ = this.questions?.length || 0;
+    const correctCount = this.answers
+      ? this.answers.filter((a, i) => a !== null && a !== -1 && this.questions[i]?.options?.[a]?.isCorrect).length
+      : 0;
+
     const fallbackScore: Score = {
       _id: 'emergency-' + Date.now(),
       userId: this.currentUserId || 'anonymous',
-      score: Math.round((this.answers.filter((a, i) => 
-        a !== null && a !== -1 && this.questions[i]?.options?.[a]?.isCorrect
-      ).length / this.questions.length) * 100),
-      correctAnswers: this.answers.filter((a, i) => 
-        a !== null && a !== -1 && this.questions[i]?.options?.[a]?.isCorrect
-      ).length,
-      totalQuestions: this.questions.length,
+      score: totalQ ? Math.round((correctCount / totalQ) * 100) : 0,
+      correctAnswers: correctCount,
+      totalQuestions: totalQ,
       timeSpent,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    
+
     this.quizResult = fallbackScore;
     this.quizFinished = true;
     this.quizStarted = false;
@@ -402,11 +392,13 @@ export class QuizComponent implements OnInit, OnDestroy {
     this.gameWinner = null;
     this.gameOver = false;
     this.isWinner = false;
+    this.showAnswerFeedback = false;
+    this.currentCorrectAnswerIndex = null;
     this.quizStartTime = Date.now();
-    
-    // Reset online mode specific variables
-    this.onlineQuestionsQueue = [];
+
+    this.onlineQuestionsQueue = {};
     this.currentOnlineQuestion = null;
+    this.waitingForNextQuestion = false;
     this.totalOnlineQuestions = 10;
 
     this.loadQuestions();
@@ -414,51 +406,104 @@ export class QuizComponent implements OnInit, OnDestroy {
 
   private loadQuestions(): void {
     if (this.mode === 'solo') {
-      // Solo mode: load all questions at once
       this.questionService.getQuestions(10).subscribe({
         next: (questions) => {
-          this.questions = questions;
-          this.answers = new Array(questions.length).fill(null);
-          this.totalTime = questions.length * 30;
+          this.questions = questions || [];
+          this.answers = new Array(this.questions.length).fill(null);
+          this.totalTime = this.questions.length * 30;
           this.timeRemaining = this.totalTime;
           this.startTimer(this.totalTime);
           this.loading = false;
-          console.log('✅ Solo mode: All questions loaded:', questions.length);
+          console.log('✅ Solo mode: All questions loaded:', this.questions.length);
+          this.cdr.detectChanges();
         },
         error: () => {
           this.loading = false;
           this.error = 'Failed to load questions. Please try again.';
           this.quizStarted = false;
+          this.cdr.detectChanges();
         },
       });
     } else {
-      // Online mode: request first question from server
+      // Online mode: request ALL questions at once
       this.loading = true;
-      console.log('🔄 Online mode: Requesting first question...');
-      
-      // Request first question from server via socket
+      console.log('🔄 Online mode: Requesting all questions...');
+  
+      // Initialize arrays
+      this.questions = [];
+      this.answers = [];
+  
+      // Request all questions from server via socket
       if (this.socketService.isConnected()) {
-        this.socketService.emitRequestQuestion({
+        this.socketService.emitRequestQuestions({
           quizId: this.quizId,
-          questionIndex: 0
+          count: 10
         });
-        
-        // Set timeout in case server doesn't respond
+  
+        // Listen for the questions loaded event
+        const questionsSub = this.socketService.onQuestionsLoaded().subscribe((data: any) => {
+          if (data.questions && Array.isArray(data.questions)) {
+            this.questions = data.questions;
+            this.answers = new Array(this.questions.length).fill(null);
+            this.totalOnlineQuestions = this.questions.length;
+            this.loading = false;
+            
+            console.log(`✅ Online mode: All ${this.questions.length} consistent questions loaded`);
+            
+            // Start with first question
+            this.timeRemaining = this.questionTimeLimit;
+            this.questionStartTime = Date.now();
+            this.startTimer(this.questionTimeLimit);
+            
+            this.cdr.detectChanges();
+          }
+        });
+  
+        this.socketSubscriptions.add(questionsSub);
+  
+        // Fallback timeout
         setTimeout(() => {
           if (this.loading && this.questions.length === 0) {
-            console.log('⏰ Fallback: Loading question from API...');
-            this.loadFallbackQuestion(0);
+            console.log('⏰ Fallback: Loading questions from API...');
+            this.loadFallbackQuestions();
           }
         }, 5000);
       } else {
-        this.loadFallbackQuestion(0);
+        this.loadFallbackQuestions();
       }
     }
   }
 
-  /**
-   * Load fallback question when server doesn't respond
-   */
+
+  private loadFallbackQuestions(): void {
+    console.log('🔄 Loading fallback questions...');
+    this.questionService.getQuestions(10).subscribe({
+      next: (questions) => {
+        if (questions && questions.length > 0) {
+          this.questions = questions;
+          this.answers = new Array(this.questions.length).fill(null);
+          this.totalOnlineQuestions = this.questions.length;
+          this.loading = false;
+          
+          console.log(`✅ Fallback: ${this.questions.length} questions loaded`);
+          this.startTimer(this.questionTimeLimit);
+          this.cdr.detectChanges();
+        } else {
+          this.loading = false;
+          this.error = 'Failed to load questions. Please try again.';
+          this.quizStarted = false;
+          this.cdr.detectChanges();
+        }
+      },
+      error: () => {
+        this.loading = false;
+        this.error = 'Failed to load questions. Please try again.';
+        this.quizStarted = false;
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
   private loadFallbackQuestion(questionIndex: number): void {
     console.log(`🔄 Loading fallback question ${questionIndex}...`);
     this.questionService.getSingleQuestion().subscribe({
@@ -467,69 +512,79 @@ export class QuizComponent implements OnInit, OnDestroy {
           this.handleNewQuestion({
             question,
             questionIndex,
-            totalQuestions: 10
+            totalQuestions: 10,
           });
         } else {
           this.loading = false;
           this.error = 'Failed to load question. Please try again.';
           this.quizStarted = false;
+          this.cdr.detectChanges();
         }
       },
       error: () => {
         this.loading = false;
         this.error = 'Failed to load question. Please try again.';
         this.quizStarted = false;
-      }
+        this.cdr.detectChanges();
+      },
     });
   }
 
-  /**
-   * Request next question for online mode
-   */
   private requestNextQuestion(): void {
     const nextQuestionIndex = this.currentQuestionIndex + 1;
-    
+
     if (nextQuestionIndex >= this.totalOnlineQuestions) {
       console.log('🎯 Reached maximum questions');
       return;
     }
 
     console.log(`🔄 Requesting next question ${nextQuestionIndex}...`);
-    
-    // Check if we already have this question in queue
+
     if (this.onlineQuestionsQueue[nextQuestionIndex]) {
       console.log(`✅ Using queued question ${nextQuestionIndex}`);
       const queuedQuestion = this.onlineQuestionsQueue[nextQuestionIndex];
       this.questions[nextQuestionIndex] = queuedQuestion;
       this.answers[nextQuestionIndex] = null;
+      this.currentOnlineQuestion = queuedQuestion;
       delete this.onlineQuestionsQueue[nextQuestionIndex];
+
+      this.timeRemaining = this.questionTimeLimit;
+      this.questionStartTime = Date.now();
+      this.startTimer(this.questionTimeLimit);
+
       return;
     }
+
+    this.waitingForNextQuestion = true;
+    this.loading = true;
 
     if (this.socketService.isConnected()) {
       this.socketService.emitRequestQuestion({
         quizId: this.quizId,
-        questionIndex: nextQuestionIndex
+        questionIndex: nextQuestionIndex,
       });
-      
-      // Notify server we're ready for next question
+
       this.socketService.emitReadyForNextQuestion({
         quizId: this.quizId,
-        userId: this.currentUserId!,
-        questionIndex: nextQuestionIndex
+        userId: this.currentUserId || '',
+        questionIndex: nextQuestionIndex,
       });
+
+      setTimeout(() => {
+        if (this.waitingForNextQuestion && !this.questions[nextQuestionIndex]) {
+          console.log('⏰ Fallback: Loading next question from API...');
+          this.loadFallbackQuestion(nextQuestionIndex);
+        }
+      }, 5000);
     } else {
-      // Fallback: load from service
       this.loadFallbackQuestion(nextQuestionIndex);
     }
   }
 
   /* ------------------- Timer Logic ------------------- */
-
   private startTimer(duration: number): void {
     this.stopTimer();
     this.timeRemaining = duration;
-    this.questionStartTime = Date.now();
   
     this.timerSubscription = interval(1000).subscribe(() => {
       if (this.gameOver) {
@@ -538,14 +593,13 @@ export class QuizComponent implements OnInit, OnDestroy {
       }
   
       if (this.mode === 'online') {
-        const elapsed = Math.floor((Date.now() - this.questionStartTime) / 1000);
-        this.timeRemaining = Math.max(0, this.questionTimeLimit - elapsed);
+        this.timeRemaining--;
   
         if (this.timeRemaining <= 0) {
           this.stopTimer();
-          
+  
           const isLastQuestion = this.currentQuestionIndex === this.totalOnlineQuestions - 1;
-          
+  
           if (isLastQuestion) {
             console.log('⏰ Final question time expired - determining winner immediately');
             this.handleFinalQuestionTimeExpired();
@@ -561,168 +615,41 @@ export class QuizComponent implements OnInit, OnDestroy {
           this.nextQuestion();
         }
       }
+  
       this.updateProgress();
+      this.cdr.detectChanges();
     });
-  }
-
-  private handleFinalQuestionTimeExpired(): void {
-    this.debugGameState('Final Question Time Expired');
-    console.log('⏰ Final question time expired - determining winner');
-    
-    // Clear any emergency fallback from previous questions
-    if (this.emergencyFallbackTimeout) {
-      clearTimeout(this.emergencyFallbackTimeout);
-      this.emergencyFallbackTimeout = null;
-    }
-    
-    if (this.watchMode) {
-      console.log('👀 Watch mode - determining winner');
-      this.determineWinnerOnTimeExpired();
-      return;
-    }
-    
-    // For active players, check if they answered correctly
-    const playerAnswered = this.answers[this.currentQuestionIndex] !== null;
-    let playerCorrect = false;
-    
-    if (playerAnswered) {
-      const current = this.questions[this.currentQuestionIndex];
-      const selectedAnswer = this.answers[this.currentQuestionIndex];
-      
-      if (selectedAnswer !== null && selectedAnswer !== undefined) {
-        playerCorrect = current.options[selectedAnswer]?.isCorrect;
-      }
-    }
-    
-    if (playerCorrect) {
-      console.log('🎯 Player answered correctly on final question - immediate win');
-      this.declareWinner();
-    } else {
-      console.log('❌ Player did not answer correctly - determining winner');
-      this.determineWinnerOnTimeExpired();
-    }
-  }
-
-  private handleRegularQuestionTimeExpired(): void {
-    const playerAnswered = this.answers[this.currentQuestionIndex] !== null;
-    
-    if (this.watchMode) {
-      console.log('👀 Watch mode - time expired, revealing correct answer');
-      this.error = "Time's up! Revealing correct answer...";
-      
-      setTimeout(() => {
-        if (this.currentQuestionIndex < this.totalOnlineQuestions - 1) {
-          this.nextQuestion();
-        } else {
-          this.submitQuiz();
-        }
-      }, 2000);
-      
-    } else {
-      if (playerAnswered) {
-        const current = this.questions[this.currentQuestionIndex];
-        const selectedAnswer = this.answers[this.currentQuestionIndex];
-        
-        if (selectedAnswer !== null && selectedAnswer !== undefined) {
-          const isCorrect = current.options[selectedAnswer]?.isCorrect;
-          
-          if (!isCorrect) {
-            this.eliminatePlayer("Wrong answer! You've been eliminated.");
-            
-            if (this.socketService.isConnected() && this.currentUserId) {
-              this.socketService.emitPlayerAnswered({
-                userId: this.currentUserId,
-                questionIndex: this.currentQuestionIndex,
-                isCorrect: false
-              });
-            }
-          } else {
-            if (this.socketService.isConnected() && this.currentUserId) {
-              this.socketService.emitPlayerAnswered({
-                userId: this.currentUserId,
-                questionIndex: this.currentQuestionIndex,
-                isCorrect: true
-              });
-            }
-          }
-        }
-      } else {
-        this.answers[this.currentQuestionIndex] = -1;
-        this.eliminatePlayer("Time's up! You've been eliminated for not answering.");
-      }
-      
-      setTimeout(() => {
-        if (this.currentQuestionIndex < this.totalOnlineQuestions - 1) {
-          this.nextQuestion();
-        }
-      }, 2000);
-    }
-  }
-
-  private determineWinnerOnTimeExpired(): void {
-    if (this.gameOver) return;
-    
-    console.log('🎯 Starting winner determination process');
-    
-    // Clear any previous errors
-    this.error = null;
-    
-    // Set emergency fallback - if not resolved in 5 seconds, force end
-    this.emergencyFallbackTimeout = setTimeout(() => {
-      if (!this.gameOver) {
-        console.log('🚨 EMERGENCY: Forcing game end due to timeout');
-        this.forceEmergencyEnd();
-      }
-    }, 5000);
-    
-    // For online mode with socket, wait for server response
-    if (this.mode === 'online' && this.socketService.isConnected()) {
-      console.log('📡 Waiting for server to determine winner...');
-      
-      // Request winner determination from server
-      this.socketService.emitDetermineWinner({
-        quizId: this.quizId,
-        questionIndex: this.currentQuestionIndex
-      });
-      
-    } else {
-      console.log('🔧 Using immediate fallback determination');
-      this.immediateFallbackDetermineWinner();
-    }
   }
 
   private immediateFallbackDetermineWinner(): void {
     if (this.gameOver) return;
-    
+
     console.log('🔧 Using immediate fallback winner determination');
-    
-    // Clear emergency timeout since we're handling it now
+
     if (this.emergencyFallbackTimeout) {
       clearTimeout(this.emergencyFallbackTimeout);
       this.emergencyFallbackTimeout = null;
     }
-    
-    // Check if current player answered correctly
-    const playerAnswered = this.answers[this.currentQuestionIndex] !== null;
+
+    const playerAnswered = this.answers?.[this.currentQuestionIndex] !== null && this.answers?.[this.currentQuestionIndex] !== undefined;
     let playerCorrect = false;
-    
+
     if (playerAnswered) {
-      const current = this.questions[this.currentQuestionIndex];
+      const current = this.questions?.[this.currentQuestionIndex];
       const selectedAnswer = this.answers[this.currentQuestionIndex];
-      
-      if (selectedAnswer !== null && selectedAnswer !== undefined) {
-        playerCorrect = current.options[selectedAnswer]?.isCorrect;
+
+      if (current && selectedAnswer !== null && selectedAnswer !== undefined) {
+        playerCorrect = !!current.options?.[selectedAnswer]?.isCorrect;
       }
     }
-    
-    // Simple logic: if current player answered correctly and not in watch mode, they win
+
     if (playerCorrect && !this.watchMode) {
       console.log('🎯 Current player wins - they answered correctly');
       this.declareWinner();
     } else {
       console.log('👥 Another player wins or draw');
       const random = Math.random();
-      
+
       if (random < 0.7) {
         this.simulateOtherPlayerWin();
       } else {
@@ -733,67 +660,172 @@ export class QuizComponent implements OnInit, OnDestroy {
 
   private simulateOtherPlayerWin(): void {
     if (this.gameOver) return;
-    
+
     console.log('🤖 Simulating other player win');
-    
+
     const otherPlayers = ['QuizMaster', 'Brainiac', 'Champion', 'ProPlayer'];
     const randomWinner = otherPlayers[Math.floor(Math.random() * otherPlayers.length)];
-    
-    this.handleGameOver({
-      userId: 'other-player-' + Date.now(),
-      username: randomWinner
-    });
+
+    this.handleGameOver({ userId: 'other-player-' + Date.now(), username: randomWinner });
   }
 
   private forceEmergencyEnd(): void {
     if (this.gameOver) return;
-    
+
     console.log('🚨 EMERGENCY: Forcing game end');
     this.gameOver = true;
     this.stopTimer();
-    
+
     const timeSpent = Math.max(1, Math.floor((Date.now() - this.quizStartTime) / 1000));
-    
+
     const emergencyScore: Score = {
       _id: 'emergency-' + Date.now(),
       userId: this.currentUserId || 'anonymous',
       score: 50,
-      correctAnswers: Math.floor(this.questions.length / 2),
-      totalQuestions: this.questions.length,
+      correctAnswers: Math.floor((this.questions?.length || 0) / 2),
+      totalQuestions: this.questions?.length || 0,
       timeSpent,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    
+
     this.quizResult = emergencyScore;
     this.quizFinished = true;
     this.quizStarted = false;
     this.loading = false;
-    this.error = "Quiz completed - results may be incomplete";
-    
+    this.error = 'Quiz completed - results may be incomplete';
+
     console.log('🚨 Game forced to end');
     this.cdr.detectChanges();
     this.scrollToTop();
   }
 
+  private determineWinnerOnTimeExpired(): void {
+    if (this.gameOver) return;
+
+    console.log('🎯 Starting winner determination process');
+
+    this.error = null;
+
+    this.emergencyFallbackTimeout = setTimeout(() => {
+      if (!this.gameOver) {
+        console.log('🚨 EMERGENCY: Forcing game end due to timeout');
+        this.forceEmergencyEnd();
+      }
+    }, 5000);
+
+    if (this.mode === 'online' && this.socketService.isConnected()) {
+      console.log('📡 Waiting for server to determine winner...');
+      this.socketService.emitDetermineWinner({ quizId: this.quizId, questionIndex: this.currentQuestionIndex });
+    } else {
+      console.log('🔧 Using immediate fallback determination');
+      this.immediateFallbackDetermineWinner();
+    }
+  }
+
+  private handleFinalQuestionTimeExpired(): void {
+    this.debugGameState('Final Question Time Expired');
+    console.log('⏰ Final question time expired - determining winner');
+
+    if (this.emergencyFallbackTimeout) {
+      clearTimeout(this.emergencyFallbackTimeout);
+      this.emergencyFallbackTimeout = null;
+    }
+
+    if (this.watchMode) {
+      console.log('👀 Watch mode - determining winner');
+      this.determineWinnerOnTimeExpired();
+      return;
+    }
+
+    const playerAnswered = this.answers?.[this.currentQuestionIndex] !== null && this.answers?.[this.currentQuestionIndex] !== undefined;
+    let playerCorrect = false;
+
+    if (playerAnswered) {
+      const current = this.questions?.[this.currentQuestionIndex];
+      const selectedAnswer = this.answers[this.currentQuestionIndex];
+
+      if (current && selectedAnswer !== null && selectedAnswer !== undefined) {
+        playerCorrect = !!current.options?.[selectedAnswer]?.isCorrect;
+      }
+    }
+
+    if (playerCorrect) {
+      console.log('🎯 Player answered correctly on final question - immediate win');
+      this.declareWinner();
+    } else {
+      console.log('❌ Player did not answer correctly - determining winner');
+      this.determineWinnerOnTimeExpired();
+    }
+  }
+
+  private handleRegularQuestionTimeExpired(): void {
+    const playerAnswered = this.answers?.[this.currentQuestionIndex] !== null && this.answers?.[this.currentQuestionIndex] !== undefined;
+
+    if (this.watchMode) {
+      console.log('👀 Watch mode - time expired, revealing correct answer');
+      this.error = "Time's up! Revealing correct answer...";
+
+      setTimeout(() => {
+        if (this.currentQuestionIndex < this.totalOnlineQuestions - 1) {
+          this.nextQuestion();
+        } else {
+          this.submitQuiz();
+        }
+      }, 2000);
+    } else {
+      if (playerAnswered) {
+        const current = this.questions?.[this.currentQuestionIndex];
+        const selectedAnswer = this.answers[this.currentQuestionIndex];
+
+        if (current && selectedAnswer !== null && selectedAnswer !== undefined) {
+          const isCorrect = !!current.options?.[selectedAnswer]?.isCorrect;
+
+          if (!isCorrect) {
+            this.eliminatePlayer("Wrong answer! You've been eliminated.");
+
+            if (this.socketService.isConnected() && this.currentUserId) {
+              this.socketService.emitPlayerAnswered({ userId: this.currentUserId, questionIndex: this.currentQuestionIndex, isCorrect: false });
+            }
+          } else {
+            if (this.socketService.isConnected() && this.currentUserId) {
+              this.socketService.emitPlayerAnswered({ userId: this.currentUserId, questionIndex: this.currentQuestionIndex, isCorrect: true });
+            }
+          }
+        }
+      } else {
+        this.answers[this.currentQuestionIndex] = -1;
+        this.eliminatePlayer("Time's up! You've been eliminated for not answering.");
+      }
+
+      setTimeout(() => {
+        if (this.currentQuestionIndex < this.totalOnlineQuestions - 1) {
+          this.nextQuestion();
+        }
+      }, 2000);
+    }
+  }
+
   private stopTimer(): void {
-    this.timerSubscription?.unsubscribe();
+    try {
+      this.timerSubscription?.unsubscribe();
+    } catch (e) {}
     this.timerSubscription = null;
   }
 
   private updateProgress(): void {
-    if (!this.questions.length) {
+    if (!this.questions?.length) {
       this.progress = 0;
       return;
     }
-
+  
     if (this.mode === 'online') {
+      // For online mode, calculate progress based on current question
       this.progress = Math.round(((this.currentQuestionIndex + 1) / this.totalOnlineQuestions) * 100);
     } else {
+      // Solo mode: calculate based on time
       const elapsed = this.totalTime - this.timeRemaining;
-      this.progress = this.totalTime
-        ? Math.min(100, Math.round((elapsed / this.totalTime) * 100))
-        : 0;
+      this.progress = this.totalTime ? Math.min(100, Math.round((elapsed / this.totalTime) * 100)) : 0;
     }
   }
 
@@ -807,70 +839,48 @@ export class QuizComponent implements OnInit, OnDestroy {
     console.log('Winner:', this.gameWinner);
     console.log('Is Winner:', this.isWinner);
     console.log('Time Remaining:', this.timeRemaining);
-    console.log('Current Answer:', this.answers[this.currentQuestionIndex]);
-    console.log('Questions in queue:', Object.keys(this.onlineQuestionsQueue).length);
+    console.log('Current Answer:', this.answers?.[this.currentQuestionIndex]);
+    console.log('Questions in queue:', Object.keys(this.onlineQuestionsQueue || {}).length);
+    console.log('Waiting for next question:', this.waitingForNextQuestion);
     console.log('========================');
   }
 
   private eliminatePlayer(reason: string): void {
     if (this.watchMode) return;
-    
+
     this.watchMode = true;
     this.error = reason;
-    
-    // Notify server that this player is eliminated
+
     if (this.socketService.isConnected() && this.currentUserId) {
-      this.socketService.emitPlayerEliminated({
-        userId: this.currentUserId,
-        questionIndex: this.currentQuestionIndex,
-        reason: reason
-      });
+      this.socketService.emitPlayerEliminated({ userId: this.currentUserId, questionIndex: this.currentQuestionIndex, reason });
     }
-    
+
     this.cdr.detectChanges();
   }
 
   /* ------------------- Navigation Between Questions ------------------- */
   nextQuestion(): void {
-    if (!this.questions.length) return;
+    if (!this.questions?.length) return;
   
-    // Reset selection and clear errors
+    // Reset answer feedback state
+    this.showAnswerFeedback = false;
+    this.currentCorrectAnswerIndex = null;
     this.selectedAnswer = null;
     this.error = null;
-    
+  
     if (this.currentQuestionIndex < this.totalOnlineQuestions - 1) {
       this.currentQuestionIndex++;
       this.updateProgress();
-      
+  
       if (this.mode === 'online') {
+        // For online mode, we already have all questions, just start timer
         this.timeRemaining = this.questionTimeLimit;
         this.questionStartTime = Date.now();
         this.startTimer(this.questionTimeLimit);
-        
-        // Ensure we have the question for the current index
-        if (!this.questions[this.currentQuestionIndex]) {
-          this.loading = true;
-          // Check if we have this question in queue
-          if (this.onlineQuestionsQueue[this.currentQuestionIndex]) {
-            const queuedQuestion = this.onlineQuestionsQueue[this.currentQuestionIndex];
-            this.questions[this.currentQuestionIndex] = queuedQuestion;
-            this.answers[this.currentQuestionIndex] = null;
-            delete this.onlineQuestionsQueue[this.currentQuestionIndex];
-            this.loading = false;
-          } else {
-            // Request the question
-            this.requestNextQuestion();
-          }
-        }
       }
-      
+  
       this.selectedAnswer = this.answers[this.currentQuestionIndex];
       this.scrollToTop();
-      
-      // Pre-load next question for online mode
-      if (this.mode === 'online') {
-        this.requestNextQuestion();
-      }
     } else {
       this.submitQuiz();
     }
@@ -886,7 +896,7 @@ export class QuizComponent implements OnInit, OnDestroy {
   }
 
   goToQuestion(index: number): void {
-    if (index >= 0 && index < this.questions.length) {
+    if (index >= 0 && index < (this.questions?.length || 0)) {
       this.currentQuestionIndex = index;
       this.selectedAnswer = this.answers[this.currentQuestionIndex];
       this.scrollToTop();
@@ -894,100 +904,83 @@ export class QuizComponent implements OnInit, OnDestroy {
   }
 
   /* ------------------- Answer Handling ------------------- */
-
   selectAnswer(index: number): void {
-    // Prevent answer selection in watch mode
-    if (this.watchMode || this.answers[this.currentQuestionIndex] !== null || this.gameOver) return;
+    if (this.watchMode || this.answers?.[this.currentQuestionIndex] !== null || this.gameOver) return;
 
     this.selectedAnswer = index;
     this.answers[this.currentQuestionIndex] = index;
-    
+
+    const current = this.questions?.[this.currentQuestionIndex];
+    const isCorrect = !!current?.options?.[index]?.isCorrect;
+
+    this.currentCorrectAnswerIndex = current?.options?.findIndex(opt => opt.isCorrect) ?? null;
+
     if (this.mode === 'online') {
-      const current = this.questions[this.currentQuestionIndex];
-      const isCorrect = current.options[index]?.isCorrect;
+      const isLastQuestion = this.currentQuestionIndex === this.totalOnlineQuestions - 1;
 
       if (isCorrect) {
-        // Check if this is the LAST QUESTION
-        const isLastQuestion = this.currentQuestionIndex === this.totalOnlineQuestions - 1;
-        
         if (isLastQuestion) {
           console.log('🎯 Correct answer on final question - immediate win!');
           this.declareWinner();
           return;
         } else {
-          // Regular question: store answer but wait for time to expire for feedback
-          this.answers[this.currentQuestionIndex] = index;
-          
-          // Notify server about correct answer
           if (this.socketService.isConnected() && this.currentUserId) {
-            this.socketService.emitPlayerAnswered({
-              userId: this.currentUserId,
-              questionIndex: this.currentQuestionIndex,
-              isCorrect: true
-            });
+            this.socketService.emitPlayerAnswered({ userId: this.currentUserId, questionIndex: this.currentQuestionIndex, isCorrect: true });
           }
-          
-          // Clear any previous error messages
           this.error = null;
         }
       } else {
-        // Wrong answer
         const isLastQuestion = this.currentQuestionIndex === this.totalOnlineQuestions - 1;
-        
+
         if (isLastQuestion) {
           console.log('❌ Wrong answer on final question - immediate elimination');
-          this.eliminatePlayer("Wrong answer on final question! Game over.");
+          this.eliminatePlayer('Wrong answer on final question! Game over.');
         } else {
-          // For non-last questions, wrong answers are handled when time expires
-          this.error = null;
-          
-          // Notify server about wrong answer
           if (this.socketService.isConnected() && this.currentUserId) {
-            this.socketService.emitPlayerAnswered({
-              userId: this.currentUserId,
-              questionIndex: this.currentQuestionIndex,
-              isCorrect: false
-            });
+            this.socketService.emitPlayerAnswered({ userId: this.currentUserId, questionIndex: this.currentQuestionIndex, isCorrect: false });
           }
         }
       }
     } else {
-      // Solo mode behavior remains the same
-      this.cdr.detectChanges();
+      // SOLO MODE: Show immediate feedback
+      this.showAnswerFeedback = true;
+      
+      setTimeout(() => {
+        this.showAnswerFeedback = false;
+        this.currentCorrectAnswerIndex = null;
+        
+        if (this.currentQuestionIndex < this.questions.length - 1) {
+          this.nextQuestion();
+        } else {
+          this.submitQuiz();
+        }
+      }, 1500);
     }
+    
+    this.cdr.detectChanges();
   }
 
   private declareWinner(): void {
     if (this.gameOver || !this.currentUserId) return;
-  
+
     this.gameOver = true;
     this.isWinner = true;
-    
+
     const currentUser = this.authService.currentUserValue;
     const winnerData = {
       userId: this.currentUserId,
-      username: currentUser?.username || 'Unknown Player'
+      username: currentUser?.username || 'Unknown Player',
     };
-    
+
     this.gameWinner = winnerData;
-    
-    // Stop all timers
+
     this.stopTimer();
-    
-    // Notify all other players that this player won
+
     if (this.socketService.isConnected()) {
-      this.socketService.emitPlayerWin({
-        userId: this.currentUserId,
-        username: winnerData.username,
-        questionIndex: this.currentQuestionIndex
-      });
-      
-      this.socketService.emitGameOver({
-        winner: winnerData
-      });
+      this.socketService.emitPlayerWin({ userId: this.currentUserId, username: winnerData.username, questionIndex: this.currentQuestionIndex });
+      this.socketService.emitGameOver({ winner: winnerData });
     }
-    
-    // Calculate and show final score
+
     const timeSpent = Math.max(1, Math.floor((Date.now() - this.quizStartTime) / 1000));
     this.calculateLocalScore(timeSpent).subscribe({
       next: (score) => {
@@ -1001,9 +994,9 @@ export class QuizComponent implements OnInit, OnDestroy {
         const fallback: Score = {
           _id: 'local-' + Date.now(),
           userId: this.currentUserId || 'anonymous',
-          score: 100, // Winner gets 100%
-          correctAnswers: this.questions.length,
-          totalQuestions: this.questions.length,
+          score: 100,
+          correctAnswers: this.questions?.length || 0,
+          totalQuestions: this.questions?.length || 0,
           timeSpent,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
@@ -1013,27 +1006,26 @@ export class QuizComponent implements OnInit, OnDestroy {
         this.quizStarted = false;
         this.loading = false;
         this.cdr.detectChanges();
-      }
+      },
     });
-    
+
     this.scrollToTop();
   }
 
   /* ------------------- Helpers ------------------- */
-
   private calculateLocalScore(timeSpent: number): Observable<Score> {
     return new Observable((observer) => {
       try {
-        const total = this.questions.length;
-        const correct = this.questions.reduce((acc, q, i) => {
-          const sel = this.answers[i];
-          return sel !== null && sel !== -1 && q.options?.[sel]?.isCorrect ? acc + 1 : acc;
-        }, 0);
+        const total = this.questions?.length || 0;
+        const correct = this.questions?.reduce((acc, q, i) => {
+          const sel = this.answers?.[i];
+          return sel !== null && sel !== undefined && sel !== -1 && q.options?.[sel]?.isCorrect ? acc + 1 : acc;
+        }, 0) || 0;
 
         const result: Score = {
           _id: 'local-' + Date.now(),
           userId: this.currentUserId || 'anonymous',
-          score: Math.round((correct / total) * 100),
+          score: total ? Math.round((correct / total) * 100) : 0,
           correctAnswers: correct,
           totalQuestions: total,
           timeSpent,
@@ -1050,7 +1042,6 @@ export class QuizComponent implements OnInit, OnDestroy {
   }
 
   /* ------------------- UI Utilities ------------------- */
-
   continueWatching(): void {
     this.error = null;
     if (this.currentQuestionIndex < this.totalOnlineQuestions - 1) {
@@ -1060,55 +1051,46 @@ export class QuizComponent implements OnInit, OnDestroy {
     }
   }
 
- /**
-   * Submit the quiz and calculate final score
-   * Made public to fix the TypeScript error
-   */
- submitQuiz(): void {
-  if (this.quizFinished || this.loading) return;
-  this.loading = true;
-  this.stopTimer();
+  submitQuiz(): void {
+    if (this.quizFinished || this.loading) return;
+    this.loading = true;
+    this.stopTimer();
 
-  const timeSpent = Math.max(1, Math.floor((Date.now() - this.quizStartTime) / 1000));
+    const timeSpent = Math.max(1, Math.floor((Date.now() - this.quizStartTime) / 1000));
 
-  this.calculateLocalScore(timeSpent).subscribe({
-    next: (score) => this.finishQuizWithScore(score, timeSpent),
-    error: () => {
-      const fallback: Score = {
-        _id: 'local-' + Date.now(),
-        userId: this.currentUserId || 'anonymous',
-        score: 0,
-        correctAnswers: 0,
-        totalQuestions: this.questions.length,
-        timeSpent,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      this.finishQuizWithScore(fallback, timeSpent);
-      this.error = 'Error calculating final score. Showing partial results.';
-    },
-  });
-}
-
-/**
-   * Finish the quiz with the calculated score
-   */
-private finishQuizWithScore(score: Score, timeSpent: number): void {
-  this.quizResult = { ...score, timeSpent };
-  this.quizFinished = true;
-  this.quizStarted = false;
-  this.loading = false;
-  this.stopTimer();
-
-  // Save score if in online mode and user is authenticated
-  if (this.mode === 'online' && this.currentUserId) {
-    this.saveScore(score, timeSpent);
+    this.calculateLocalScore(timeSpent).subscribe({
+      next: (score) => this.finishQuizWithScore(score, timeSpent),
+      error: () => {
+        const fallback: Score = {
+          _id: 'local-' + Date.now(),
+          userId: this.currentUserId || 'anonymous',
+          score: 0,
+          correctAnswers: 0,
+          totalQuestions: this.questions?.length || 0,
+          timeSpent,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        this.finishQuizWithScore(fallback, timeSpent);
+        this.error = 'Error calculating final score. Showing partial results.';
+      },
+    });
   }
 
-  this.scrollToTop();
-  this.cdr.detectChanges();
-}
+  private finishQuizWithScore(score: Score, timeSpent: number): void {
+    this.quizResult = { ...score, timeSpent };
+    this.quizFinished = true;
+    this.quizStarted = false;
+    this.loading = false;
+    this.stopTimer();
 
+    if (this.mode === 'online' && this.currentUserId) {
+      this.saveScore(score, timeSpent);
+    }
+
+    this.scrollToTop();
+    this.cdr.detectChanges();
+  }
 
   private saveScore(score: Score, timeSpent: number): void {
     if (!this.currentUserId) return;
@@ -1120,11 +1102,11 @@ private finishQuizWithScore(score: Score, timeSpent: number): void {
       correctAnswers: score.correctAnswers,
       totalQuestions: score.totalQuestions,
       timeSpent,
-      answers: this.answers.map((a, i) => ({
-        questionId: this.questions[i]?._id || '',
+      answers: this.answers?.map((a, i) => ({
+        questionId: this.questions?.[i]?._id || '',
         selectedOption: a,
-        isCorrect: this.questions[i]?.options?.[a ?? -1]?.isCorrect || false,
-      })),
+        isCorrect: this.questions?.[i]?.options?.[a ?? -1]?.isCorrect || false,
+      })) || [],
     };
 
     this.scoreService.saveScore(scoreData).subscribe({
@@ -1138,12 +1120,18 @@ private finishQuizWithScore(score: Score, timeSpent: number): void {
   }
 
   private cleanupSubscriptions(): void {
-    this.quizSubscription?.unsubscribe();
-    this.timerSubscription?.unsubscribe();
+    try {
+      this.quizSubscription?.unsubscribe();
+    } catch (e) {}
+    try {
+      this.timerSubscription?.unsubscribe();
+    } catch (e) {}
+    try {
+      this.socketSubscriptions?.unsubscribe();
+    } catch (e) {}
   }
 
   /* ------------------- UI Utilities ------------------- */
-
   getScoreClass(score: number): string {
     if (score >= 80) return 'score-excellent';
     if (score >= 50) return 'score-good';
@@ -1153,7 +1141,30 @@ private finishQuizWithScore(score: Score, timeSpent: number): void {
   getLetter(index: number): string {
     return String.fromCharCode(65 + index);
   }
+  
 
+  get totalQuestionsCount(): number {
+    if (this.mode === 'online') {
+      return this.totalOnlineQuestions;
+    }
+    return this.questions?.length || 0;
+  }
+  
+  get currentProgress(): number {
+    if (!this.questions?.length) return 0;
+    
+    if (this.mode === 'online') {
+      return Math.round(((this.currentQuestionIndex + 1) / this.totalOnlineQuestions) * 100);
+    }
+    return Math.round(((this.currentQuestionIndex + 1) / this.questions.length) * 100);
+  }
+  
+  get ariaValueMax(): number {
+    if (this.mode === 'online') {
+      return this.totalOnlineQuestions;
+    }
+    return this.questions?.length || 0;
+  }
   startAnswerWaitTimer(callback: () => void): void {
     if (this.answerWaitTimer) clearInterval(this.answerWaitTimer);
     this.waitingForAnswer = true;
@@ -1177,13 +1188,15 @@ private finishQuizWithScore(score: Score, timeSpent: number): void {
     return incorrect === 0 || (incorrect === 1 && this.quizResult.correctAnswers === 0);
   }
 
-  // Helper to get current question for display
   get currentQuestion(): Question | null {
     return this.questions[this.currentQuestionIndex] || null;
   }
 
-  // Helper to check if we have a question for the current index
   get hasCurrentQuestion(): boolean {
     return !!this.questions[this.currentQuestionIndex];
+  }
+
+  get isWaitingForNextQuestion(): boolean {
+    return this.waitingForNextQuestion;
   }
 }

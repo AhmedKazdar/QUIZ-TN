@@ -26,14 +26,37 @@
             <i class="bi bi-telephone-fill me-2"></i>+216 {{ currentUser.phoneNumber }}
           </p>
         </div>
-      <!--   <button class="btn btn-outline-danger btn-sm" (click)="logout()" title="Logout">
-          <i class="bi bi-box-arrow-right me-1"></i> Logout
-        </button> -->
       </div>
     </div>
 
-     <!-- Online Users Section -->
-     <div class="online-users mt-5" *ngIf="isAuthenticated && enableWebSocket">
+    <!-- TESTING: Developer Override Section -->
+    <!-- ========== DEVELOPER TESTING SECTION - REMOVE IN PRODUCTION ========== -->
+    <div *ngIf="enableDevOverride" class="dev-override-section mt-4">
+      <div class="card border-warning">
+        <div class="card-header bg-warning text-dark">
+          <h6 class="mb-0">
+            <i class="bi bi-tools me-2"></i>Developer Testing Mode
+          </h6>
+        </div>
+        <div class="card-body">
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" id="devOverrideToggle" 
+                   [checked]="forceOnlineMode" (change)="toggleDevOverride()">
+            <label class="form-check-label" for="devOverrideToggle">
+              <strong>Force Online Mode Access</strong>
+            </label>
+          </div>
+          <small class="text-muted">
+            When enabled, you can access online mode regardless of quiz schedule.
+            Current status: <strong>{{ forceOnlineMode ? 'OVERRIDE ACTIVE' : 'Normal Mode' }}</strong>
+          </small>
+        </div>
+      </div>
+    </div>
+    <!-- ========== END DEVELOPER TESTING SECTION ========== -->
+
+    <!-- Online Users Section -->
+    <div class="online-users mt-5" *ngIf="isAuthenticated && enableWebSocket">
       <div class="card">
         <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
           <h5 class="mb-0">
@@ -56,7 +79,6 @@
             </span>
           </div>
         </div>
-        <!-- List removed: header-only display requested -->
       </div>
     </div>
 
@@ -74,18 +96,87 @@
             </button>
           </div>
           <div class="col-md-6">
-            <button class="btn btn-success btn-lg w-100 p-4" [routerLink]="['/quiz', 'online']">
+            <button class="btn btn-lg w-100 p-4" 
+                    [ngClass]="{
+                      'btn-success': onlineModeAvailable || (enableDevOverride && forceOnlineMode),
+                      'btn-secondary': !onlineModeAvailable && !(enableDevOverride && forceOnlineMode)
+                    }"
+                    (click)="navigateToOnlineQuiz()"
+                    [disabled]="checkingAvailability">
               <div class="mode-icon mb-2">
-                <i class="bi bi-people"></i>
+                <i class="bi" [ngClass]="{
+                  'bi-people': onlineModeAvailable || (enableDevOverride && forceOnlineMode),
+                  'bi-clock': !onlineModeAvailable && !(enableDevOverride && forceOnlineMode)
+                }"></i>
               </div>
-              <h4>Online Mode</h4>
-              <p class="small text-light">Compete with other players in real-time</p>
+              <h4>
+                <span *ngIf="checkingAvailability">Checking...</span>
+                <span *ngIf="!checkingAvailability">
+                  <!-- TESTING: Show override indicator -->
+                  <span *ngIf="enableDevOverride && forceOnlineMode" class="badge bg-warning text-dark me-1">DEV</span>
+                  {{ (onlineModeAvailable || (enableDevOverride && forceOnlineMode)) ? 'Online Mode' : 'Coming Soon' }}
+                </span>
+              </h4>
+              <p class="small" [ngClass]="{
+                'text-light': onlineModeAvailable || (enableDevOverride && forceOnlineMode),
+                'text-muted': !onlineModeAvailable && !(enableDevOverride && forceOnlineMode)
+              }">
+                <span *ngIf="checkingAvailability">Verifying availability...</span>
+                <span *ngIf="!checkingAvailability && (onlineModeAvailable || (enableDevOverride && forceOnlineMode))">
+                  <!-- TESTING: Show override message -->
+                  <span *ngIf="enableDevOverride && forceOnlineMode" class="text-warning">
+                    [DEV MODE] Compete with other players
+                  </span>
+                  <span *ngIf="!enableDevOverride || !forceOnlineMode">
+                    Compete with other players in real-time
+                  </span>
+                </span>
+                <span *ngIf="!checkingAvailability && !onlineModeAvailable && !(enableDevOverride && forceOnlineMode)">
+                  {{ onlineModeMessage }}
+                </span>
+              </p>
+              
+              <!-- Countdown Display -->
+              <div *ngIf="!onlineModeAvailable && countdown && !forceOnlineMode" class="countdown mt-2">
+                <div class="countdown-badge">
+                  <i class="bi bi-clock me-1"></i>
+                  Starts in: {{ countdown }}
+                </div>
+              </div>
             </button>
           </div>
         </div>
       </div>
 
-     
+      <!-- Today's Quiz Schedule -->
+      <div class="schedule-card mt-4" *ngIf="todaysSchedule.length > 0">
+        <div class="card">
+          <div class="card-header bg-info text-white">
+            <h5 class="mb-0">
+              <i class="bi bi-calendar-event me-2"></i>Today's Quiz Schedule
+              <button class="btn btn-sm btn-light ms-2" (click)="refreshAvailability()" title="Refresh">
+                <i class="bi bi-arrow-clockwise"></i>
+              </button>
+            </h5>
+          </div>
+          <div class="card-body">
+            <div class="schedule-times">
+              <div *ngFor="let time of todaysSchedule" 
+                   class="schedule-time-badge"
+                   [ngClass]="{'active': isCurrentTime(time)}">
+                {{ time }}
+              </div>
+            </div>
+            <div class="next-quiz mt-2" *ngIf="nextQuizTime && !onlineModeAvailable && !forceOnlineMode">
+              <small class="text-muted">
+                <i class="bi bi-clock me-1"></i>
+                Next quiz: {{ nextQuizTime }}
+                <span *ngIf="countdown"> ({{ countdown }})</span>
+              </small>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </div>

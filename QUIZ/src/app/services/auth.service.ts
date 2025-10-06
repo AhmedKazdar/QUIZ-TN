@@ -1,9 +1,9 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { BehaviorSubject, Observable, throwError } from 'rxjs';
+import { BehaviorSubject, Observable, throwError, of } from 'rxjs';
 import { tap, catchError } from 'rxjs/operators';
 import { Router } from '@angular/router';
-import { environment } from '../../environments/environment';  // Fixed import path
+import { environment } from '../../environments/environment';
 
 export interface User {
   _id: string;
@@ -120,5 +120,107 @@ export class AuthService {
   getToken(): string | null {
     const user = this.currentUserValue;
     return user?.token || null;
+  }
+
+  // NEW METHODS FOR TOKEN VALIDATION
+
+  isTokenExpired(): boolean {
+    const token = this.getToken();
+    if (!token) return true;
+
+    try {
+      // JWT tokens are in format: header.payload.signature
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      const exp = payload.exp * 1000; // Convert to milliseconds
+      return Date.now() >= exp;
+    } catch (error) {
+      console.error('[AuthService] Error parsing token:', error);
+      return true;
+    }
+  }
+
+  forceLogoutWithMessage(message: string): void {
+    console.warn('[AuthService] Force logout:', message);
+    localStorage.removeItem('currentUser');
+    this.currentUserSubject.next(null);
+    
+    // Show message to user
+    alert(message);
+    
+    // Redirect to home
+    this.router.navigate(['/home']);
+  }
+
+  validateToken(): Observable<boolean> {
+    const token = this.getToken();
+    
+    if (!token) {
+      console.warn('[AuthService] No token found');
+      return of(false);
+    }
+  
+    if (this.isTokenExpired()) {
+      console.warn('[AuthService] Token is expired');
+      this.forceLogoutWithMessage('Your session has expired. Please login again.');
+      return of(false);
+    }
+  
+    // For now, use local validation
+    // You can call validateTokenWithServer() for server-side validation
+    console.log('[AuthService] Token appears valid locally');
+    return of(true);
+  }
+
+  // Refresh token if needed (you can implement this if your backend supports token refresh)
+  refreshToken(): Observable<any> {
+    const token = this.getToken();
+    if (!token) {
+      return throwError(() => new Error('No token available'));
+    }
+
+    return this.http.post(`${this.apiUrl}/api/player/refresh-token`, { token }).pipe(
+      tap((response: any) => {
+        if (response.token) {
+          const currentUser = this.currentUserValue;
+          if (currentUser) {
+            const updatedUser: User = {
+              ...currentUser,
+              token: response.token
+            };
+            localStorage.setItem('currentUser', JSON.stringify(updatedUser));
+            this.currentUserSubject.next(updatedUser);
+          }
+        }
+      }),
+      catchError((error) => {
+        console.error('[AuthService] Token refresh failed:', error);
+        this.logout();
+        return throwError(() => error);
+      })
+    );
+  }
+
+  // Get token expiration time
+  getTokenExpiration(): Date | null {
+    const token = this.getToken();
+    if (!token) return null;
+
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      return new Date(payload.exp * 1000);
+    } catch (error) {
+      console.error('[AuthService] Error getting token expiration:', error);
+      return null;
+    }
+  }
+
+  // Check if token will expire soon (within 5 minutes)
+  isTokenExpiringSoon(minutes = 5): boolean {
+    const expiration = this.getTokenExpiration();
+    if (!expiration) return true;
+
+    const now = new Date();
+    const timeUntilExpiration = expiration.getTime() - now.getTime();
+    return timeUntilExpiration <= (minutes * 60 * 1000);
   }
 }

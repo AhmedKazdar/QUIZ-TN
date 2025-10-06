@@ -1,5 +1,5 @@
 // backend/src/player/player.controller.ts
-import { Controller, Post, Body, Get, UseGuards, Req, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Controller, Post, Body, Get, UseGuards, Req, NotFoundException, BadRequestException,Request } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PlayerService } from './player.service';
 import { RegisterPlayerDto } from './dto/register-player.dto';
@@ -80,4 +80,18 @@ export class PlayerController {
       createdAt: player.createdAt
     };
   }
+
+  @Get('validate-token')
+@UseGuards(JwtAuthGuard)
+async validateToken(@Request() req) {
+  return {
+    valid: true,
+    user: {
+      id: req.user.userId,
+      username: req.user.username,
+      phoneNumber: req.user.phoneNumber
+    },
+    message: 'Token is valid'
+  };
+}
 }

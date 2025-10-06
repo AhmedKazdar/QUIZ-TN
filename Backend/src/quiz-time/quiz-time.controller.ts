@@ -8,6 +8,9 @@ import {
   Put,
   UseGuards,
   Query,
+  Logger,
+  Request,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { QuizTimeService } from './quiz-time.service';
 import { CreateQuizTimeDto } from './dto/create-quiz-time.dto';
@@ -19,6 +22,7 @@ import { UserRole } from '../user/entities/user.entity';
 @Controller('quiz-times')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class QuizTimeController {
+  private readonly logger = new Logger(QuizTimeController.name);
   constructor(private readonly quizTimeService: QuizTimeService) {}
 
   @Post()
@@ -29,10 +33,18 @@ export class QuizTimeController {
 
   @Get()
   @Roles(UserRole.ADMIN, UserRole.USER)
-  findAll(@Query('activeOnly') activeOnly: string) {
-    return this.quizTimeService.findAll(activeOnly !== 'false');
+  async findAll(@Query('activeOnly') activeOnly: string, @Request() req) {
+    this.logger.log(`Fetching quiz times for user: ${req.user.userId}`);
+    
+    try {
+      const result = await this.quizTimeService.findAll(activeOnly !== 'false');
+      this.logger.log(`Found ${result.length} quiz times`);
+      return result;
+    } catch (error) {
+      this.logger.error('Error fetching quiz times:', error);
+      throw new UnauthorizedException('Unable to fetch quiz times');
+    }
   }
-
   @Get(':id')
   @Roles(UserRole.ADMIN)
   findOne(@Param('id') id: string) {

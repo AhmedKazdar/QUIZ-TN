@@ -207,4 +207,132 @@
       }
     }
   }
+  .schedule-card {
+    .schedule-times {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+  
+    .schedule-time-badge {
+      padding: 0.25rem 0.75rem;
+      background-color: #e9ecef;
+      border-radius: 20px;
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: #6c757d;
+      
+      &.active {
+        background-color: #28a745;
+        color: white;
+        font-weight: 600;
+      }
+    }
+  
+    .next-quiz {
+      font-size: 0.9rem;
+    }
+  }
+  
+  .mode-icon {
+    font-size: 2rem;
+  }
+  
+  // Quiz mode buttons
+  .quiz-mode-buttons {
+    .btn {
+      border: none;
+      transition: all 0.3s ease;
+      
+      &:hover:not(:disabled) {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+      }
+      
+      &:disabled {
+        opacity: 0.7;
+        cursor: not-allowed;
+      }
+    }
+  }
+  
+  // Connection status indicator
+  .connection-status {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    
+    &.connected {
+      background-color: #28a745;
+      animation: pulse 2s infinite;
+    }
+    
+    &.disconnected {
+      background-color: #dc3545;
+    }
+  }
+  
+  @keyframes pulse {
+    0% {
+      transform: scale(0.95);
+      box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.7);
+    }
+    
+    70% {
+      transform: scale(1);
+      box-shadow: 0 0 0 10px rgba(40, 167, 69, 0);
+    }
+    
+    100% {
+      transform: scale(0.95);
+      box-shadow: 0 0 0 0 rgba(40, 167, 69, 0);
+    }
+  }
+  .countdown {
+    .countdown-badge {
+      background: rgba(255, 193, 7, 0.2);
+      border: 1px solid #ffc107;
+      color: #856404;
+      padding: 0.5rem 1rem;
+      border-radius: 20px;
+      font-weight: 600;
+      font-size: 0.9rem;
+      animation: pulse-countdown 2s infinite;
+    }
+  }
+
+  /* Developer Override Section */
+.dev-override-section {
+  .card {
+    border: 2px dashed #ffc107;
+    
+    .card-header {
+      background-color: #fff3cd !important;
+      border-bottom: 1px solid #ffeaa7;
+    }
+  }
+  
+  .form-check-input:checked {
+    background-color: #ffc107;
+    border-color: #ffc107;
+  }
+}
+
+/* Override badge */
+.badge.bg-warning.text-dark {
+  font-size: 0.7rem;
+  padding: 0.2rem 0.4rem;
+}
+  
+  @keyframes pulse-countdown {
+    0% {
+      box-shadow: 0 0 0 0 rgba(255, 193, 7, 0.4);
+    }
+    70% {
+      box-shadow: 0 0 0 6px rgba(255, 193, 7, 0);
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgba(255, 193, 7, 0);
+    }
+  }
 }
