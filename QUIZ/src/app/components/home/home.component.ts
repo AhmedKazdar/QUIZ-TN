@@ -107,7 +107,6 @@ export class HomeComponent implements OnInit, OnDestroy {
           
           if (isConnected && !wasConnected) {
             setTimeout(() => {
-              this.socketService.requestOnlineUsers();
             }, 500);
           }
         },
@@ -119,7 +118,6 @@ export class HomeComponent implements OnInit, OnDestroy {
       
       this.subscriptions.add(onlineUsersSub);
       this.subscriptions.add(connectionStatusSub);
-      this.socketService.requestOnlineUsers();
       
     }, 1000);
     

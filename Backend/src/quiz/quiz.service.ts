@@ -7,7 +7,7 @@ import { CreateQuizDto, SubmitQuizResponseDto } from './dto/create-quiz.dto';
 export interface QuizQuestion {
   id: string;
   question: string;
-  options: { id: string; text: string }[];
+  options: { id: string; text: string; isCorrect: boolean }[];
   category?: string;
   difficulty?: string;
 }
@@ -36,30 +36,72 @@ export class QuizService {
     return quiz;
   }
 
-  async getRandomQuestions(limit: number = 10): Promise<Quiz[]> {
-    try {
-      // Get ALL questions from database
-      const allQuestions = await this.quizModel.find().lean().exec();
-      
-      // Shuffle and select random questions
-      const shuffledQuestions = this.shuffleArray([...allQuestions]);
-      return shuffledQuestions.slice(0, limit);
-    } catch (error) {
-      console.error('Error in QuizService.getRandomQuestions:', error);
-      throw new Error('Failed to fetch random questions');
-    }
-  }
   /**
-   * Shuffle array using Fisher-Yates algorithm
+   * Get a specified number of random questions from the database
    */
-  private shuffleArray<T>(array: T[]): T[] {
-    const newArray = [...array];
-    for (let i = newArray.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+  async getRandomQuestions(count: number): Promise<QuizQuestion[]> {
+    try {
+      console.log(`🔍 Getting ${count} random questions from database...`);
+
+      // Fetch questions directly from MongoDB with all fields
+      const allQuestions = await this.quizModel.find().lean().exec();
+
+      if (!allQuestions || allQuestions.length === 0) {
+        throw new Error('No questions available in database');
+      }
+
+      // Transform questions safely
+      const transformedQuestions = allQuestions.map((q: any) => ({
+        _id: q._id.toString(),
+        id: q._id.toString(),
+        question: q.question,
+        options: Array.isArray(q.options)
+          ? q.options.map((opt, idx) => ({
+              id: idx.toString(),
+              text: opt.text,
+              isCorrect: opt.isCorrect,
+            }))
+          : [], // ensure options always exists
+        category: q.category || 'General',
+        difficulty: q.difficulty || 'Medium',
+      }));
+
+      // Random shuffle
+      const shuffled = [...transformedQuestions]
+        .sort(() => Math.random() - 0.5)
+        .slice(0, Math.min(count, transformedQuestions.length));
+
+      console.log(`✅ Returning ${shuffled.length} shuffled questions`);
+      return shuffled;
+    } catch (error) {
+      console.error('❌ Error getting random questions:', error);
+      throw new Error(`Failed to get random questions: ${error.message}`);
     }
-    return newArray;
   }
+
+  async getAllQuestions(): Promise<QuizQuestion[]> {
+    try {
+      const questions = await this.quizModel.find().lean().exec();
+      return questions.map((q: any) => ({
+        _id: q._id.toString(),
+        id: q._id.toString(),
+        question: q.question,
+        options: Array.isArray(q.options)
+          ? q.options.map((opt, idx) => ({
+              id: idx.toString(),
+              text: opt.text,
+              isCorrect: opt.isCorrect,
+            }))
+          : [],
+        category: q.category || 'General',
+        difficulty: q.difficulty || 'Medium',
+      }));
+    } catch (error) {
+      console.error('Error in QuizService.getAllQuestions:', error);
+      throw new Error('Failed to fetch all questions');
+    }
+  }
+
   async submitResponse(response: SubmitQuizResponseDto, userId: string) {
     const quiz = await this.quizModel.findById(response.questionId);
     if (!quiz) {
@@ -68,18 +110,17 @@ export class QuizService {
 
     const update: any = {
       $inc: { timesAnswered: 1 },
-      $push: { responses: new Types.ObjectId() } // In a real app, you'd create a Response document
+      $push: { responses: new Types.ObjectId() },
     };
 
     if (response.isCorrect) {
       update.$inc.timesAnsweredCorrectly = 1;
     }
 
-    // Update average time spent (simple moving average)
     if (response.timeSpent) {
       const totalTime = quiz.averageTimeSpent * quiz.timesAnswered + response.timeSpent;
       update.$set = {
-        averageTimeSpent: totalTime / (quiz.timesAnswered + 1)
+        averageTimeSpent: totalTime / (quiz.timesAnswered + 1),
       };
     }
 
@@ -87,7 +128,7 @@ export class QuizService {
 
     return {
       isCorrect: response.isCorrect,
-      correctAnswer: quiz.options.find(opt => opt.isCorrect)?.text
+      correctAnswer: quiz.options.find((opt) => opt.isCorrect)?.text,
     };
   }
 
@@ -97,10 +138,10 @@ export class QuizService {
         $group: {
           _id: null,
           totalQuestions: { $sum: 1 },
-          totalResponses: { $sum: "$timesAnswered" },
-          totalCorrect: { $sum: "$timesAnsweredCorrectly" },
-          avgTimeSpent: { $avg: "$averageTimeSpent" }
-        }
+          totalResponses: { $sum: '$timesAnswered' },
+          totalCorrect: { $sum: '$timesAnsweredCorrectly' },
+          avgTimeSpent: { $avg: '$averageTimeSpent' },
+        },
       },
       {
         $project: {
@@ -110,49 +151,45 @@ export class QuizService {
           totalCorrect: 1,
           accuracy: {
             $cond: [
-              { $eq: ["$totalResponses", 0] },
+              { $eq: ['$totalResponses', 0] },
               0,
-              { $divide: ["$totalCorrect", "$totalResponses"] }
-            ]
+              { $divide: ['$totalCorrect', '$totalResponses'] },
+            ],
           },
-          avgTimeSpent: 1
-        }
-      }
+          avgTimeSpent: 1,
+        },
+      },
     ]);
 
-    return stats[0] || {
-      totalQuestions: 0,
-      totalResponses: 0,
-      totalCorrect: 0,
-      accuracy: 0,
-      avgTimeSpent: 0
-    };
+    return (
+      stats[0] || {
+        totalQuestions: 0,
+        totalResponses: 0,
+        totalCorrect: 0,
+        accuracy: 0,
+        avgTimeSpent: 0,
+      }
+    );
   }
 
   async update(id: string, updateQuizDto: CreateQuizDto): Promise<Quiz> {
     const updatedQuiz = await this.quizModel
-      .findByIdAndUpdate(
-        id,
-        { $set: updateQuizDto },
-        { new: true, runValidators: true }
-      )
+      .findByIdAndUpdate(id, { $set: updateQuizDto }, { new: true, runValidators: true })
       .exec();
-    
+
     if (!updatedQuiz) {
       throw new NotFoundException(`Quiz with ID ${id} not found`);
     }
-    
+
     return updatedQuiz;
   }
 
   async findAll(limit?: number): Promise<Quiz[]> {
     try {
       let query = this.quizModel.find();
-      
       if (limit && limit > 0) {
         query = query.limit(limit);
       }
-      
       return await query.lean().exec();
     } catch (error) {
       console.error('Error in QuizService.findAll:', error);
@@ -160,22 +197,10 @@ export class QuizService {
     }
   }
 
- /**
-   * Get all questions without any limit
-   */
- async getAllQuestions(): Promise<Quiz[]> {
-  try {
-    return await this.quizModel.find().lean().exec();
-  } catch (error) {
-    console.error('Error in QuizService.getAllQuestions:', error);
-    throw new Error('Failed to fetch all questions');
-  }
-}
-
   async delete(id: string): Promise<void> {
     const result = await this.quizModel.deleteOne({ _id: id }).exec();
     if (result.deletedCount === 0) {
-      throw new NotFoundException('Quiz not found');
+      throw new NotFoundException(`Quiz with ID ${id} not found`);
     }
   }
 }

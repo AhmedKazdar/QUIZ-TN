@@ -16,6 +16,7 @@ import { WelcomeComponent } from './components/welcome/welcome.component';
 import { QuizService } from './services/quiz.service';
 import { AuthInterceptor } from './interceptors/auth.interceptor';
 import { SocketService } from './services/socket.service';
+import { QuestionInterceptor } from './services/question-interceptor.service';
 
 @NgModule({
   declarations: [
@@ -47,6 +48,11 @@ import { SocketService } from './services/socket.service';
     {
       provide: HTTP_INTERCEPTORS,
       useClass: AuthInterceptor,
+      multi: true
+    },
+    {
+      provide: HTTP_INTERCEPTORS,
+      useClass: QuestionInterceptor,
       multi: true
     }
   ],

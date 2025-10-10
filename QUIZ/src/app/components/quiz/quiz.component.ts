@@ -2,9 +2,9 @@ import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Subscription, Observable, interval } from 'rxjs';
 import { AuthService } from '../../services/auth.service';
-import { QuestionService, Question } from '../../services/api/question.service';
 import { ScoreService } from '../../services/api/score.service';
 import { SocketService, OnlineUser } from '../../services/socket.service';
+import { QuizService, Question, QuizResult, GameWinner } from 'src/app/services/quiz.service';
 
 interface Score {
   _id: string;
@@ -32,7 +32,7 @@ export class QuizComponent implements OnInit, OnDestroy {
   quizStarted = false;
   quizFinished = false;
   watchMode = false;
-  quizResult: Score | null = null;
+  quizResult: QuizResult | null = null;
 
   loading = false;
   error: string | null = null;
@@ -52,7 +52,7 @@ export class QuizComponent implements OnInit, OnDestroy {
   currentUserId: string | null = null;
 
   /*** Winner & Game Over State ***/
-  gameWinner: { userId: string; username: string } | null = null;
+  gameWinner: GameWinner | null = null;
   gameOver = false;
   isWinner = false;
 
@@ -81,7 +81,7 @@ export class QuizComponent implements OnInit, OnDestroy {
 
   constructor(
     private authService: AuthService,
-    private questionService: QuestionService,
+    private quizService: QuizService,
     private scoreService: ScoreService,
     private router: Router,
     private route: ActivatedRoute,
@@ -96,23 +96,29 @@ export class QuizComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.routeSubscription = this.route.params.subscribe((params) => {
       let mode = params['mode'] as 'solo' | 'online' | undefined;
-
+  
       if (!mode) {
         const path = this.route.snapshot.routeConfig?.path || '';
         if (path.includes('quiz/solo')) mode = 'solo';
         else if (path.includes('quiz/online')) mode = 'online';
       }
-
+  
       if (mode === 'solo' || mode === 'online') {
         this.mode = mode;
         this.modeFromRoute = true;
         this.initializeQuiz();
+        
+        // Test the solo questions flow
+        setTimeout(() => {
+          if (mode === 'solo') {
+            this.testSoloQuestionsFlow();
+          }
+        }, 2000);
       } else {
         this.router.navigate(['/home']);
       }
     });
   }
-
   ngOnDestroy(): void {
     this.cleanupSubscriptions();
     if (this.answerWaitTimer) clearInterval(this.answerWaitTimer);
@@ -146,80 +152,100 @@ export class QuizComponent implements OnInit, OnDestroy {
     this.showAnswerFeedback = false;
     this.currentCorrectAnswerIndex = null;
     this.loading = true;
-
+  
     this.onlineQuestionsQueue = {};
     this.currentOnlineQuestion = null;
     this.waitingForNextQuestion = false;
-
+  
+    console.log('🔄 Restarting quiz in mode:', this.mode);
+  
     if (this.mode === 'solo') {
-      this.questionService.getQuestions(10).subscribe({
+      this.quizService.getSoloQuestions(10).subscribe({
         next: (questions: Question[]) => {
-          this.questions = questions || [];
-          this.answers = new Array(this.questions.length).fill(null);
-          this.totalTime = this.questions.length * 30;
-          this.timeRemaining = this.totalTime;
-          this.quizStarted = true;
-          this.loading = false;
-          this.quizStartTime = Date.now();
-          this.startTimer(this.totalTime);
+          if (questions && questions.length > 0) {
+            this.questions = questions || [];
+            this.answers = new Array(this.questions.length).fill(null);
+            this.totalTime = this.questions.length * 30;
+            this.timeRemaining = this.totalTime;
+            this.quizStarted = true;
+            this.loading = false;
+            this.quizStartTime = Date.now();
+            this.startTimer(this.totalTime);
+            console.log('✅ Restart: Questions loaded successfully');
+          } else {
+            console.log('❌ Restart: No questions received, using fallback');
+            this.loadDirectQuestions();
+          }
           this.cdr.detectChanges();
         },
-        error: (error) => {
-          console.error('Failed to load questions:', error);
-          this.loading = false;
-          this.error = 'Failed to load questions. Please try again.';
-          this.quizStarted = false;
-          this.cdr.detectChanges();
+        error: (error: any) => {
+          console.error('❌ Restart: Failed to load questions:', error);
+          console.log('🔄 Using direct fallback questions...');
+          this.loadDirectQuestions();
         },
       });
     } else {
       this.startQuiz('online');
     }
   }
-
   /* ------------------- Quiz Flow ------------------- */
   private initializeQuiz(): void {
+    // Connect WebSocket first for both modes
+    this.quizService.connectSocket();
+    
     if (this.mode === 'online' && !this.isAuthenticated) {
       this.router.navigate(['/login'], { queryParams: { returnUrl: '/quiz/online' } });
       return;
     }
-
-    if (this.mode === 'online') {
-      this.setupSocketListeners();
-    }
-
-    this.startQuiz(this.mode);
+  
+    // Set up socket listeners for both modes
+    this.setupSocketListeners();
+    
+    // Wait a bit for WebSocket connection before starting quiz
+    setTimeout(() => {
+      this.startQuiz(this.mode);
+    }, 1000);
   }
-
   private setupSocketListeners(): void {
-    this.socketService.connect();
+    this.quizService.connectSocket();
 
     try {
       this.socketSubscriptions.unsubscribe();
     } catch (e) {}
     this.socketSubscriptions = new Subscription();
 
-    const usersSub = this.socketService.getOnlineUsers().subscribe((users) => {
+     // Add solo questions listener
+  const soloQuestionsSub = this.socketService.onSoloQuestionsLoaded().subscribe((data: any) => {
+    console.log('📝 Received solo questions from server:', data);
+    if (data.questions && this.mode === 'solo') {
+      this.questions = data.questions;
+      this.answers = new Array(this.questions.length).fill(null);
+      this.loading = false;
+      this.cdr.detectChanges();
+    }
+  });
+
+    const usersSub = this.quizService.getOnlineUsers().subscribe((users) => {
       this.onlineUsers = users || [];
       console.log('👥 Online users updated:', this.onlineUsers.length);
       this.cdr.detectChanges();
     });
 
-    const statusSub = this.socketService.getConnectionStatus().subscribe((connected) => {
+    const statusSub = this.quizService.getSocketConnectionStatus().subscribe((connected) => {
       const wasConnected = this.isSocketConnected;
       this.isSocketConnected = connected;
 
       if (connected && !wasConnected) {
-        setTimeout(() => this.socketService.requestOnlineUsers(), 300);
+        setTimeout(() => this.quizService.requestOnlineUsers(), 300);
       }
     });
 
-    const newQuestionSub = this.socketService.onNewQuestion().subscribe((data: any) => {
+    const newQuestionSub = this.quizService.onNewQuestion().subscribe((data: any) => {
       console.log('📝 Received new question from server:', data);
       this.handleNewQuestion(data);
     });
 
-    const winnerDeterminedSub = this.socketService.onWinnerDetermined().subscribe((data: any) => {
+    const winnerDeterminedSub = this.quizService.onWinnerDetermined().subscribe((data: any) => {
       console.log('🎉 Winner determined received in component:', data);
 
       if (this.emergencyFallbackTimeout) {
@@ -230,28 +256,28 @@ export class QuizComponent implements OnInit, OnDestroy {
       this.handleGameOver(data?.winner);
     });
 
-    const playerEliminatedSub = this.socketService.onPlayerEliminated().subscribe((data: any) => {
+    const playerEliminatedSub = this.quizService.onPlayerEliminated().subscribe((data: any) => {
       if (data?.userId === this.currentUserId) return;
       console.log(`❌ Player ${data?.userId} was eliminated: ${data?.reason}`);
     });
 
-    const playerAnsweredSub = this.socketService.onPlayerAnswered().subscribe((data: any) => {
+    const playerAnsweredSub = this.quizService.onPlayerAnswered().subscribe((data: any) => {
       if (data?.userId === this.currentUserId) return;
       console.log(`📝 Player ${data?.userId} answered question ${data?.questionIndex} correctly: ${data?.isCorrect}`);
     });
 
-    const playerWinSub = this.socketService.onPlayerWin().subscribe((data: any) => {
+    const playerWinSub = this.quizService.onPlayerWin().subscribe((data: any) => {
       if (data?.userId === this.currentUserId) return;
       console.log(`🏆 Player ${data?.username} won the game!`);
       this.handleOtherPlayerWin(data);
     });
 
-    const gameOverSub = this.socketService.onGameOver().subscribe((data: any) => {
+    const gameOverSub = this.quizService.onGameOver().subscribe((data: any) => {
       console.log('🛑 Game over event received:', data);
       this.handleGameOver(data?.winner);
     });
 
-    const playerReadySub = this.socketService.onPlayerReady().subscribe((data: any) => {
+    const playerReadySub = this.quizService.onPlayerReady().subscribe((data: any) => {
       console.log(`✅ Player ${data?.username} is ready for question ${data?.questionIndex}`);
     });
 
@@ -264,6 +290,33 @@ export class QuizComponent implements OnInit, OnDestroy {
     this.socketSubscriptions.add(playerWinSub);
     this.socketSubscriptions.add(gameOverSub);
     this.socketSubscriptions.add(playerReadySub);
+    this.socketSubscriptions.add(soloQuestionsSub);
+  }
+
+
+
+
+  testSoloQuestionsFlow(): void {
+    console.log('🧪 Testing solo questions flow...');
+    
+    if (!this.quizService.isSocketConnected()) {
+      console.log('❌ WebSocket not connected for test');
+      return;
+    }
+  
+    // Test with a small count first
+    this.quizService.getSoloQuestions(3).subscribe({
+      next: (questions) => {
+        console.log('✅ Solo questions test SUCCESS:', questions);
+        console.log(`📋 Received ${questions.length} questions:`);
+        questions.forEach((q, i) => {
+          console.log(`  ${i + 1}. ${q.question.substring(0, 50)}...`);
+        });
+      },
+      error: (error) => {
+        console.error('❌ Solo questions test FAILED:', error);
+      }
+    });
   }
 
   private handleNewQuestion(data: any): void {
@@ -311,7 +364,7 @@ export class QuizComponent implements OnInit, OnDestroy {
     this.cdr.detectChanges();
   }
 
-  private handleGameOver(winner: { userId: string; username: string } | null): void {
+  private handleGameOver(winner: GameWinner | null): void {
     if (this.gameOver) return;
 
     console.log('🎯 Handling game over with winner:', winner);
@@ -360,7 +413,7 @@ export class QuizComponent implements OnInit, OnDestroy {
       ? this.answers.filter((a, i) => a !== null && a !== -1 && this.questions[i]?.options?.[a]?.isCorrect).length
       : 0;
 
-    const fallbackScore: Score = {
+    const fallbackScore: QuizResult = {
       _id: 'emergency-' + Date.now(),
       userId: this.currentUserId || 'anonymous',
       score: totalQ ? Math.round((correctCount / totalQ) * 100) : 0,
@@ -404,130 +457,206 @@ export class QuizComponent implements OnInit, OnDestroy {
     this.loadQuestions();
   }
 
-  private loadQuestions(): void {
-    if (this.mode === 'solo') {
-      this.questionService.getQuestions(10).subscribe({
-        next: (questions) => {
-          this.questions = questions || [];
-          this.answers = new Array(this.questions.length).fill(null);
+
+
+  private loadDirectQuestions(): void {
+    console.log('🔄 Loading questions from mock service...');
+    
+    this.quizService.getMockQuestions(10).subscribe({
+      next: (questions: Question[]) => {
+        this.questions = questions;
+        this.answers = new Array(this.questions.length).fill(null);
+        
+        if (this.mode === 'online') {
+          this.totalOnlineQuestions = this.questions.length;
+        }
+        
+        this.loading = false;
+        this.quizStarted = true;
+        
+        console.log(`✅ Mock service: ${this.questions.length} questions loaded`);
+        
+        // Start timer based on mode
+        if (this.mode === 'solo') {
           this.totalTime = this.questions.length * 30;
           this.timeRemaining = this.totalTime;
           this.startTimer(this.totalTime);
-          this.loading = false;
-          console.log('✅ Solo mode: All questions loaded:', this.questions.length);
-          this.cdr.detectChanges();
-        },
-        error: () => {
-          this.loading = false;
-          this.error = 'Failed to load questions. Please try again.';
-          this.quizStarted = false;
-          this.cdr.detectChanges();
-        },
-      });
+        } else {
+          this.timeRemaining = this.questionTimeLimit;
+          this.startTimer(this.questionTimeLimit);
+        }
+        
+        this.cdr.detectChanges();
+      },
+      error: (error: any) => {
+        console.error('❌ Even mock service failed:', error);
+        this.loading = false;
+        this.error = 'Unable to load questions. Please check your connection and try again.';
+        this.quizStarted = false;
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  private loadQuestions(): void {
+    if (this.mode === 'solo') {
+      console.log('🔄 Loading solo questions via WebSocket...');
+      
+      if (!this.quizService.isSocketConnected()) {
+        console.log('⏳ WebSocket not ready, waiting for connection...');
+        this.loading = true;
+        
+        const connectionCheck = setTimeout(() => {
+          if (!this.quizService.isSocketConnected()) {
+            console.log('❌ WebSocket still not connected, using fallback');
+            this.loadFallbackQuestions();
+          } else {
+            console.log('✅ WebSocket connected, proceeding with solo questions');
+            this.loadSoloQuestions();
+          }
+        }, 2000);
+        
+        const statusSub = this.quizService.getSocketConnectionStatus().subscribe({
+          next: (connected) => {
+            if (connected) {
+              console.log('✅ WebSocket connected via status listener');
+              clearTimeout(connectionCheck);
+              this.loadSoloQuestions();
+            }
+          }
+        });
+        
+        this.socketSubscriptions.add(statusSub);
+      } else {
+        this.loadSoloQuestions();
+      }
     } else {
-      // Online mode: request ALL questions at once
+      // Online mode - FIXED: Request 10 questions
       this.loading = true;
-      console.log('🔄 Online mode: Requesting all questions...');
+      console.log('🔄 Online mode: Requesting 10 questions...');
   
-      // Initialize arrays
       this.questions = [];
       this.answers = [];
   
-      // Request all questions from server via socket
-      if (this.socketService.isConnected()) {
-        this.socketService.emitRequestQuestions({
+      if (this.quizService.isSocketConnected()) {
+        console.log('📡 Socket is connected, requesting online questions...');
+        
+        // FIX: Use emitRequestQuestions with proper object format
+        this.quizService.emitRequestQuestions({
           quizId: this.quizId,
-          count: 10
+          count: 10  // Request 10 questions
         });
   
-        // Listen for the questions loaded event
-        const questionsSub = this.socketService.onQuestionsLoaded().subscribe((data: any) => {
-          if (data.questions && Array.isArray(data.questions)) {
-            this.questions = data.questions;
-            this.answers = new Array(this.questions.length).fill(null);
-            this.totalOnlineQuestions = this.questions.length;
-            this.loading = false;
-            
-            console.log(`✅ Online mode: All ${this.questions.length} consistent questions loaded`);
-            
-            // Start with first question
-            this.timeRemaining = this.questionTimeLimit;
-            this.questionStartTime = Date.now();
-            this.startTimer(this.questionTimeLimit);
-            
-            this.cdr.detectChanges();
+        // Listen for questions loaded event
+        const questionsSub = this.quizService.onQuestionsLoaded().subscribe({
+          next: (data: any) => {
+            console.log('✅ Online questions loaded:', data);
+            if (data.questions && Array.isArray(data.questions)) {
+              this.questions = data.questions;
+              this.answers = new Array(this.questions.length).fill(null);
+              this.totalOnlineQuestions = this.questions.length;
+              this.loading = false;
+              
+              console.log(`✅ Online mode: All ${this.questions.length} questions loaded`);
+              
+              this.timeRemaining = this.questionTimeLimit;
+              this.questionStartTime = Date.now();
+              this.startTimer(this.questionTimeLimit);
+              
+              this.cdr.detectChanges();
+            }
+          },
+          error: (error: any) => {
+            console.error('❌ Failed to load online questions:', error);
+            this.loadFallbackQuestions();
           }
         });
   
         this.socketSubscriptions.add(questionsSub);
   
-        // Fallback timeout
+        // Timeout fallback
         setTimeout(() => {
-          if (this.loading && this.questions.length === 0) {
-            console.log('⏰ Fallback: Loading questions from API...');
+          if (this.loading) {
+            console.log('⏰ Timeout: Loading fallback questions for online mode');
             this.loadFallbackQuestions();
           }
-        }, 5000);
+        }, 10000);
+  
       } else {
+        console.log('❌ Socket not connected for online mode, using fallback');
         this.loadFallbackQuestions();
       }
     }
   }
+  
 
+  private loadSoloQuestions(): void {
+    console.log('🎯 Loading 10 solo questions...');
+    this.quizService.getSoloQuestions(10).subscribe({
+      next: (questions: Question[]) => {
+        console.log('✅ Solo questions loaded successfully:', questions);
+        this.questions = questions || [];
+        this.answers = new Array(this.questions.length).fill(null);
+        this.totalTime = this.questions.length * 30;
+        this.timeRemaining = this.totalTime;
+        this.startTimer(this.totalTime);
+        this.loading = false;
+        console.log('✅ Solo mode: All questions loaded:', this.questions.length);
+        this.cdr.detectChanges();
+      },
+      error: (error: any) => {
+        console.error('❌ Failed to load solo questions via WebSocket:', error);
+        this.loadFallbackQuestions();
+      },
+    });
+  }
 
   private loadFallbackQuestions(): void {
     console.log('🔄 Loading fallback questions...');
-    this.questionService.getQuestions(10).subscribe({
-      next: (questions) => {
+    
+    // Try the service first, then use direct mock data
+    this.quizService.getSoloQuestions(10).subscribe({
+      next: (questions: Question[]) => {
         if (questions && questions.length > 0) {
           this.questions = questions;
           this.answers = new Array(this.questions.length).fill(null);
-          this.totalOnlineQuestions = this.questions.length;
+          if (this.mode === 'online') {
+            this.totalOnlineQuestions = this.questions.length;
+          }
           this.loading = false;
           
-          console.log(`✅ Fallback: ${this.questions.length} questions loaded`);
+          console.log(`✅ Fallback service: ${this.questions.length} questions loaded`);
           this.startTimer(this.questionTimeLimit);
           this.cdr.detectChanges();
         } else {
-          this.loading = false;
-          this.error = 'Failed to load questions. Please try again.';
-          this.quizStarted = false;
-          this.cdr.detectChanges();
+          console.log('❌ Fallback service returned no questions, using direct load');
+          this.loadDirectQuestions();
         }
       },
-      error: () => {
-        this.loading = false;
-        this.error = 'Failed to load questions. Please try again.';
-        this.quizStarted = false;
-        this.cdr.detectChanges();
+      error: (error: any) => {
+        console.error('❌ Fallback service failed:', error);
+        console.log('🔄 Using direct mock questions instead...');
+        this.loadDirectQuestions();
       },
     });
   }
 
   private loadFallbackQuestion(questionIndex: number): void {
     console.log(`🔄 Loading fallback question ${questionIndex}...`);
-    this.questionService.getSingleQuestion().subscribe({
-      next: (question) => {
-        if (question) {
-          this.handleNewQuestion({
-            question,
-            questionIndex,
-            totalQuestions: 10,
-          });
-        } else {
-          this.loading = false;
-          this.error = 'Failed to load question. Please try again.';
-          this.quizStarted = false;
-          this.cdr.detectChanges();
-        }
-      },
-      error: () => {
-        this.loading = false;
-        this.error = 'Failed to load question. Please try again.';
-        this.quizStarted = false;
-        this.cdr.detectChanges();
-      },
-    });
+    // Use the quiz service to get a single question
+    const question = this.quizService.getQuestion(questionIndex);
+    if (question) {
+      this.handleNewQuestion({
+        question,
+        questionIndex,
+        totalQuestions: 10,
+      });
+    } else {
+      this.loading = false;
+      this.error = 'Failed to load question. Please try again.';
+      this.quizStarted = false;
+      this.cdr.detectChanges();
+    }
   }
 
   private requestNextQuestion(): void {
@@ -558,13 +687,13 @@ export class QuizComponent implements OnInit, OnDestroy {
     this.waitingForNextQuestion = true;
     this.loading = true;
 
-    if (this.socketService.isConnected()) {
-      this.socketService.emitRequestQuestion({
+    if (this.quizService.isSocketConnected()) {
+      this.quizService.emitRequestQuestion({
         quizId: this.quizId,
         questionIndex: nextQuestionIndex,
       });
 
-      this.socketService.emitReadyForNextQuestion({
+      this.quizService.emitReadyForNextQuestion({
         quizId: this.quizId,
         userId: this.currentUserId || '',
         questionIndex: nextQuestionIndex,
@@ -678,7 +807,7 @@ export class QuizComponent implements OnInit, OnDestroy {
 
     const timeSpent = Math.max(1, Math.floor((Date.now() - this.quizStartTime) / 1000));
 
-    const emergencyScore: Score = {
+    const emergencyScore: QuizResult = {
       _id: 'emergency-' + Date.now(),
       userId: this.currentUserId || 'anonymous',
       score: 50,
@@ -714,9 +843,9 @@ export class QuizComponent implements OnInit, OnDestroy {
       }
     }, 5000);
 
-    if (this.mode === 'online' && this.socketService.isConnected()) {
+    if (this.mode === 'online' && this.quizService.isSocketConnected()) {
       console.log('📡 Waiting for server to determine winner...');
-      this.socketService.emitDetermineWinner({ quizId: this.quizId, questionIndex: this.currentQuestionIndex });
+      this.quizService.emitDetermineWinner({ quizId: this.quizId, questionIndex: this.currentQuestionIndex });
     } else {
       console.log('🔧 Using immediate fallback determination');
       this.immediateFallbackDetermineWinner();
@@ -784,12 +913,12 @@ export class QuizComponent implements OnInit, OnDestroy {
           if (!isCorrect) {
             this.eliminatePlayer("Wrong answer! You've been eliminated.");
 
-            if (this.socketService.isConnected() && this.currentUserId) {
-              this.socketService.emitPlayerAnswered({ userId: this.currentUserId, questionIndex: this.currentQuestionIndex, isCorrect: false });
+            if (this.quizService.isSocketConnected() && this.currentUserId) {
+              this.quizService.emitPlayerAnswered({ userId: this.currentUserId, questionIndex: this.currentQuestionIndex, isCorrect: false });
             }
           } else {
-            if (this.socketService.isConnected() && this.currentUserId) {
-              this.socketService.emitPlayerAnswered({ userId: this.currentUserId, questionIndex: this.currentQuestionIndex, isCorrect: true });
+            if (this.quizService.isSocketConnected() && this.currentUserId) {
+              this.quizService.emitPlayerAnswered({ userId: this.currentUserId, questionIndex: this.currentQuestionIndex, isCorrect: true });
             }
           }
         }
@@ -851,8 +980,8 @@ export class QuizComponent implements OnInit, OnDestroy {
     this.watchMode = true;
     this.error = reason;
 
-    if (this.socketService.isConnected() && this.currentUserId) {
-      this.socketService.emitPlayerEliminated({ userId: this.currentUserId, questionIndex: this.currentQuestionIndex, reason });
+    if (this.quizService.isSocketConnected() && this.currentUserId) {
+      this.quizService.emitPlayerEliminated({ userId: this.currentUserId, questionIndex: this.currentQuestionIndex, reason });
     }
 
     this.cdr.detectChanges();
@@ -913,7 +1042,7 @@ export class QuizComponent implements OnInit, OnDestroy {
     const current = this.questions?.[this.currentQuestionIndex];
     const isCorrect = !!current?.options?.[index]?.isCorrect;
 
-    this.currentCorrectAnswerIndex = current?.options?.findIndex(opt => opt.isCorrect) ?? null;
+    this.currentCorrectAnswerIndex = current?.options?.findIndex((opt: any) => opt.isCorrect) ?? null;
 
     if (this.mode === 'online') {
       const isLastQuestion = this.currentQuestionIndex === this.totalOnlineQuestions - 1;
@@ -924,8 +1053,8 @@ export class QuizComponent implements OnInit, OnDestroy {
           this.declareWinner();
           return;
         } else {
-          if (this.socketService.isConnected() && this.currentUserId) {
-            this.socketService.emitPlayerAnswered({ userId: this.currentUserId, questionIndex: this.currentQuestionIndex, isCorrect: true });
+          if (this.quizService.isSocketConnected() && this.currentUserId) {
+            this.quizService.emitPlayerAnswered({ userId: this.currentUserId, questionIndex: this.currentQuestionIndex, isCorrect: true });
           }
           this.error = null;
         }
@@ -936,8 +1065,8 @@ export class QuizComponent implements OnInit, OnDestroy {
           console.log('❌ Wrong answer on final question - immediate elimination');
           this.eliminatePlayer('Wrong answer on final question! Game over.');
         } else {
-          if (this.socketService.isConnected() && this.currentUserId) {
-            this.socketService.emitPlayerAnswered({ userId: this.currentUserId, questionIndex: this.currentQuestionIndex, isCorrect: false });
+          if (this.quizService.isSocketConnected() && this.currentUserId) {
+            this.quizService.emitPlayerAnswered({ userId: this.currentUserId, questionIndex: this.currentQuestionIndex, isCorrect: false });
           }
         }
       }
@@ -967,7 +1096,7 @@ export class QuizComponent implements OnInit, OnDestroy {
     this.isWinner = true;
 
     const currentUser = this.authService.currentUserValue;
-    const winnerData = {
+    const winnerData: GameWinner = {
       userId: this.currentUserId,
       username: currentUser?.username || 'Unknown Player',
     };
@@ -976,9 +1105,9 @@ export class QuizComponent implements OnInit, OnDestroy {
 
     this.stopTimer();
 
-    if (this.socketService.isConnected()) {
-      this.socketService.emitPlayerWin({ userId: this.currentUserId, username: winnerData.username, questionIndex: this.currentQuestionIndex });
-      this.socketService.emitGameOver({ winner: winnerData });
+    if (this.quizService.isSocketConnected()) {
+      this.quizService.emitPlayerWin({ userId: this.currentUserId, username: winnerData.username, questionIndex: this.currentQuestionIndex });
+      this.quizService.emitGameOver({ winner: winnerData });
     }
 
     const timeSpent = Math.max(1, Math.floor((Date.now() - this.quizStartTime) / 1000));
@@ -991,7 +1120,7 @@ export class QuizComponent implements OnInit, OnDestroy {
         this.cdr.detectChanges();
       },
       error: () => {
-        const fallback: Score = {
+        const fallback: QuizResult = {
           _id: 'local-' + Date.now(),
           userId: this.currentUserId || 'anonymous',
           score: 100,
@@ -1013,7 +1142,7 @@ export class QuizComponent implements OnInit, OnDestroy {
   }
 
   /* ------------------- Helpers ------------------- */
-  private calculateLocalScore(timeSpent: number): Observable<Score> {
+  private calculateLocalScore(timeSpent: number): Observable<QuizResult> {
     return new Observable((observer) => {
       try {
         const total = this.questions?.length || 0;
@@ -1022,7 +1151,7 @@ export class QuizComponent implements OnInit, OnDestroy {
           return sel !== null && sel !== undefined && sel !== -1 && q.options?.[sel]?.isCorrect ? acc + 1 : acc;
         }, 0) || 0;
 
-        const result: Score = {
+        const result: QuizResult = {
           _id: 'local-' + Date.now(),
           userId: this.currentUserId || 'anonymous',
           score: total ? Math.round((correct / total) * 100) : 0,
@@ -1061,7 +1190,7 @@ export class QuizComponent implements OnInit, OnDestroy {
     this.calculateLocalScore(timeSpent).subscribe({
       next: (score) => this.finishQuizWithScore(score, timeSpent),
       error: () => {
-        const fallback: Score = {
+        const fallback: QuizResult = {
           _id: 'local-' + Date.now(),
           userId: this.currentUserId || 'anonymous',
           score: 0,
@@ -1077,7 +1206,7 @@ export class QuizComponent implements OnInit, OnDestroy {
     });
   }
 
-  private finishQuizWithScore(score: Score, timeSpent: number): void {
+  private finishQuizWithScore(score: QuizResult, timeSpent: number): void {
     this.quizResult = { ...score, timeSpent };
     this.quizFinished = true;
     this.quizStarted = false;
@@ -1092,7 +1221,7 @@ export class QuizComponent implements OnInit, OnDestroy {
     this.cdr.detectChanges();
   }
 
-  private saveScore(score: Score, timeSpent: number): void {
+  private saveScore(score: QuizResult, timeSpent: number): void {
     if (!this.currentUserId) return;
 
     const scoreData = {
@@ -1142,7 +1271,6 @@ export class QuizComponent implements OnInit, OnDestroy {
     return String.fromCharCode(65 + index);
   }
   
-
   get totalQuestionsCount(): number {
     if (this.mode === 'online') {
       return this.totalOnlineQuestions;
@@ -1165,6 +1293,7 @@ export class QuizComponent implements OnInit, OnDestroy {
     }
     return this.questions?.length || 0;
   }
+
   startAnswerWaitTimer(callback: () => void): void {
     if (this.answerWaitTimer) clearInterval(this.answerWaitTimer);
     this.waitingForAnswer = true;

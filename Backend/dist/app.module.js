@@ -12,10 +12,6 @@ const config_1 = require("@nestjs/config");
 const mongoose_1 = require("@nestjs/mongoose");
 const user_module_1 = require("./user/user.module");
 const auth_module_1 = require("./auth/auth.module");
-const question_module_1 = require("./question/question.module");
-const response_module_1 = require("./response/response.module");
-const result_module_1 = require("./result/result.module");
-const score_module_1 = require("./score/score.module");
 const online_module_1 = require("./gateways/online.module");
 const infobip_otp_module_1 = require("./infobip-otp/infobip-otp.module");
 const webhook_module_1 = require("./webhook/webhook.module");
@@ -43,10 +39,6 @@ exports.AppModule = AppModule = __decorate([
             }),
             user_module_1.UserModule,
             auth_module_1.AuthModule,
-            question_module_1.QuestionModule,
-            response_module_1.ResponseModule,
-            result_module_1.ResultModule,
-            score_module_1.ScoreModule,
             online_module_1.OnlineModule,
             infobip_otp_module_1.InfobipOtpModule,
             webhook_module_1.WebhookModule,
