@@ -151,118 +151,74 @@ async handleGetOnlineUsers(@ConnectedSocket() client: AuthenticatedSocket) {
     };
   }
 }
+  /**
+   * Handles new client connections, performs authentication, and sets up user state.
+   * @param client The connecting socket.
+   */
   async handleConnection(client: AuthenticatedSocket) {
-    const clientIp = client.handshake.address;
-    const socketId = client.id;
-    
-    this.logger.log(`🔌 New quiz connection attempt: ${socketId} from ${clientIp}`);
-    
+    const { address: clientIp } = client.handshake;
+    const { id: socketId } = client;
+    this.logger.log(`[Connection] New connection attempt from IP: ${clientIp}, Socket ID: ${socketId}`);
+
     try {
-      // Read token ONLY from auth header, not from query parameters
       const token = client.handshake.auth?.token;
-      
-      this.logger.log(`🔍 Token search results for ${socketId}:`, {
-        auth: !!client.handshake.auth?.token,
-        // Remove query parameter logging
-        headers: !!client.handshake.headers?.authorization,
-        tokenExists: !!token
-      });
-      
       if (!token) {
-        this.logger.warn(`❌ No token provided for socket ${socketId} from ${clientIp}`);
-        client.emit('authentication_required', { 
-          message: 'Authentication required for quiz features',
-          code: 'AUTH_REQUIRED'
-        });
-        return;
+        this.logger.warn(`[Auth] No token provided for socket ${socketId}. Disconnecting.`);
+        client.emit('authentication_error', { message: 'Authentication token is required.' });
+        return client.disconnect();
       }
-  
-      const attempts = this.connectionAttempts.get(clientIp) || 0;
+
+      // Basic rate limiting for connection attempts
+      const attempts = (this.connectionAttempts.get(clientIp) || 0) + 1;
+      this.connectionAttempts.set(clientIp, attempts);
       if (attempts > 5) {
-        this.logger.warn(`🚫 Too many connection attempts from ${clientIp}`);
+        this.logger.warn(`[Auth] Too many connection attempts from ${clientIp}. Disconnecting.`);
         client.emit('authentication_error', { message: 'Too many connection attempts. Please wait.' });
-        client.disconnect();
-        return;
+        return client.disconnect();
       }
-  
-      this.connectionAttempts.set(clientIp, attempts + 1);
-  
-      try {
-        const payload = this.jwtService.verify(token, {
-          secret: this.configService.get('JWT_SECRET') || '123456',
-        });
-  
-        this.connectionAttempts.delete(clientIp);
-  
-        client.user = {
-          userId: payload.sub,
-          username: payload.username || payload.phoneNumber,
-        };
-  
-        this.logger.log(`✅ Quiz client connected: ${socketId} (User: ${client.user.username})`);
-        
-        client.join(`user_${client.user.userId}`);
-        
-        // Add user to online users
-        this.addOnlineUser(client);
-        
-        client.emit('authentication_success', { 
-          message: 'Successfully connected to quiz gateway',
-          user: client.user
-        });
-  
-        // Remove socketId from debug info sent to client
-        client.emit('connection_debug', {
-          // Remove socketId: client.id,
-          userId: client.user.userId,
-          username: client.user.username,
-          timestamp: new Date().toISOString()
-        });
-  
-      } catch (jwtError) {
-        this.logger.error(`❌ JWT Error for socket ${socketId}: ${jwtError.message}`);
-        
-        if (jwtError.name === 'TokenExpiredError') {
-          client.emit('token_expired', { 
-            message: 'Authentication token has expired. Please refresh your token.',
-            code: 'TOKEN_EXPIRED'
-          });
-        } else if (jwtError.name === 'JsonWebTokenError') {
-          client.emit('authentication_error', { 
-            message: 'Invalid authentication token.',
-            code: 'INVALID_TOKEN'
-          });
-        } else {
-          client.emit('authentication_error', { 
-            message: 'Authentication failed.',
-            code: 'AUTH_FAILED'
-          });
-        }
-        
-        this.logger.log(`🔌 Allowing quiz connection ${socketId} with limited features due to auth error`);
-      }
-  
-    } catch (error) {
-      this.logger.error(`❌ Connection error for socket ${socketId}: ${error.message}`);
-      client.emit('authentication_error', { 
-        message: 'Connection authentication failed',
-        code: 'CONNECTION_FAILED'
+
+      // Verify JWT
+      const payload = this.jwtService.verify(token, {
+        secret: this.configService.get('JWT_SECRET') || '123456',
       });
+      this.connectionAttempts.delete(clientIp); // Clear attempts on success
+
+      // Attach user info to the socket
+      client.user = {
+        userId: payload.sub,
+        username: payload.username || payload.phoneNumber,
+      };
+
+      this.logger.log(`[Auth] Client authenticated successfully: ${client.user.username} (ID: ${client.user.userId})`);
+      client.join(`user_${client.user.userId}`);
+      this.addOnlineUser(client);
+      client.emit('authentication_success', { message: 'Successfully connected.', user: client.user });
+
+    } catch (error) {
+      this.logger.error(`[Auth] Authentication failed for socket ${socketId}: ${error.message}`);
+      if (error.name === 'TokenExpiredError') {
+        client.emit('token_expired', { message: 'Your session has expired. Please log in again.' });
+      } else {
+        client.emit('authentication_error', { message: 'Authentication failed. Invalid or expired token.' });
+      }
+      client.disconnect();
     }
   }
 
+  /**
+   * Handles client disconnections and cleans up their state.
+   * @param client The disconnecting socket.
+   */
   handleDisconnect(client: AuthenticatedSocket) {
-    if (!client.user) {
-      this.logger.log(`Unauthenticated client disconnected: ${client.id}`);
-      return;
+    if (client.user) {
+      this.logger.log(`[Disconnection] Client disconnected: ${client.user.username} (ID: ${client.user.userId})`);
+      this.removeOnlineUser(client);
+      this.removeParticipantFromAllSynchronizedSessions(client.user.userId);
+    } else {
+      this.logger.log(`[Disconnection] Unauthenticated client disconnected: ${client.id}`);
     }
-    
-    this.logger.log(`Client disconnected: ${client.id} (User: ${client.user.username})`);
-    this.quizSessionService.removeParticipantFromAllSessions(client.user.userId);
-    this.removeParticipantFromAllSynchronizedSessions(client.user.userId);
-    
-    const clientIp = client.handshake.address;
-    this.connectionAttempts.delete(clientIp);
+    // Clear connection attempts for the IP address
+    this.connectionAttempts.delete(client.handshake.address);
   }
 
   // NEW: Handle solo questions request
@@ -272,91 +228,36 @@ async handleGetOnlineUsers(@ConnectedSocket() client: AuthenticatedSocket) {
 // @UseGuards(JwtAuthGuard)
 // @SubscribeMessage('getSoloQuestions')
 // NEW: No guard, manual check inside
-@SubscribeMessage('getSoloQuestions')
-async handleGetSoloQuestions(
-  @ConnectedSocket() client: AuthenticatedSocket,
-  @MessageBody() data: { count: number; mode: string },
-) {
-  // MANUAL AUTH CHECK: Since connection already auths, verify user here
-  if (!client.user) {
-    this.logger.warn(`❌ [SOLO] Unauthorized access to solo questions from ${client.id}`);
-    client.emit('soloQuestionsError', {
-      message: 'Authentication required',
-      code: 'UNAUTHORIZED',
-      timestamp: new Date().toISOString()
-    });
-    return { event: 'error', data: { message: 'Unauthorized' } };
-  }
-
-  try {
-    this.logger.log(`📚 [SOLO] Requesting ${data?.count} solo questions for user ${client.user.username}`);
-    this.logger.log(`📦 [SOLO] Received data:`, data);
-    
-    if (!data?.count) {
-      this.logger.warn(`❌ [SOLO] No count provided, using default 10`);
-      data.count = 10;
+  /**
+   * Handles requests for solo quiz questions.
+   * @param client The authenticated socket.
+   * @param data The request payload, expecting a 'count' property.
+   */
+  @SubscribeMessage('getSoloQuestions')
+  async handleGetSoloQuestions(
+    @ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() data: { count: number },
+  ) {
+    if (!client.user) {
+      this.logger.warn(`[Security] Unauthorized attempt to get solo questions from unauthenticated client ${client.id}.`);
+      return client.emit('soloQuestionsError', { message: 'Authentication required.' });
     }
 
-    // Get questions from your service
-    const questions = await this.quizService.getRandomQuestions(data.count);
+    try {
+      const count = data.count || 10;
+      this.logger.log(`[Solo Quiz] User ${client.user.username} requested ${count} solo questions.`);
+      const questions = await this.quizService.getRandomQuestions(count);
 
-    this.logger.log(`✅ [SOLO] Sending ${questions.length} solo questions to ${client.user.username}`);
-
-    // CRITICAL FIX: Handle both QuizQuestion interface and actual MongoDB documents
-    const formattedQuestions = questions.map((q: any) => {
-      // Handle both _id (MongoDB) and id (interface)
-      const questionId = q._id?.toString() || q.id?.toString() || Math.random().toString();
-      
-      return {
-        _id: questionId,
-        id: questionId,
-        question: q.question,
-        options: (q.options || []).map((opt: any, index: number) => ({
-          id: index.toString(),
-          text: opt.text,
-          isCorrect: opt.isCorrect === true
-        })),
-        category: q.category || 'General',
-        difficulty: q.difficulty || 'Medium'
-      };
-    });
-
-    this.logger.log(`📋 [SOLO] First formatted question:`, {
-      id: formattedQuestions[0]?.id,
-      question: formattedQuestions[0]?.question?.substring(0, 50) + '...',
-      optionsCount: formattedQuestions[0]?.options?.length,
-      hasCorrectAnswer: formattedQuestions[0]?.options?.some(opt => opt.isCorrect)
-    });
-    
-    // Send back to the requesting client only - USE CORRECT EVENT NAME
-    client.emit('soloQuestionsLoaded', {
-      questions: formattedQuestions,
-      totalQuestions: formattedQuestions.length,
-      mode: data.mode || 'solo',
-      timestamp: new Date().toISOString()
-    });
-    
-    this.logger.log(`📤 [SOLO] Emitted soloQuestionsLoaded event to client`);
-    
-    return {
-      event: 'success',
-      data: { message: 'Questions sent' }
-    };
-  } catch (error) {
-    this.logger.error('❌ [SOLO] Error getting solo questions:', error);
-    
-    client.emit('soloQuestionsError', {
-      message: 'Failed to load questions',
-      error: error.message,
-      timestamp: new Date().toISOString()
-    });
-    
-    return {
-      event: 'error',
-      data: { message: 'Failed to load questions' }
-    };
+      client.emit('soloQuestionsLoaded', {
+        questions: this.formatQuestions(questions),
+        totalQuestions: questions.length,
+        mode: 'solo',
+      });
+    } catch (error) {
+      this.logger.error(`[Solo Quiz] Error fetching questions for ${client.user.username}: ${error.message}`);
+      client.emit('soloQuestionsError', { message: 'Failed to load questions. Please try again later.' });
+    }
   }
-}
 
 /* 
   @SubscribeMessage('requestQuestions')
@@ -374,127 +275,50 @@ async handleRequestQuestionsDebug(
 
   // NEW: Handle online questions request
   //@UseGuards(JwtAuthGuard)
+  /**
+   * Handles requests for online multiplayer quiz questions.
+   * If a session for the quiz ID already exists, it returns the existing questions.
+   * Otherwise, it generates a new deterministic set of questions.
+   * @param client The authenticated socket.
+   * @param data The request payload, expecting 'quizId' and 'count'.
+   */
   @SubscribeMessage('requestQuestions')
   async handleRequestQuestions(
     @ConnectedSocket() client: AuthenticatedSocket,
-    @MessageBody() data: { quizId: string; count: number; mode?: string; timestamp?: number },
+    @MessageBody() data: { quizId: string; count: number },
   ) {
+    if (!client.user) {
+      this.logger.warn(`[Security] Unauthorized attempt to request online questions from unauthenticated client ${client.id}.`);
+      return client.emit('questionsError', { message: 'Authentication required.' });
+    }
+
     try {
-      this.logger.log(`🎯 [REQUEST QUESTIONS] Received request from ${client.user.username}`);
-      this.logger.log(`📦 [REQUEST QUESTIONS] Request data:`, data);
-      
-      if (!data?.count) {
-        this.logger.warn(`⚠️ [REQUEST QUESTIONS] No count provided, using default 10`);
-        data.count = 10;
-      }
-  
-      // Check if it's a solo quiz (quizId starts with 'solo-quiz-' or mode is 'solo')
-      const isSoloQuiz = data.quizId?.startsWith('solo-quiz-') || data.mode === 'solo';
-      
-      this.logger.log(`🔍 [REQUEST QUESTIONS] Mode detection:`, {
-        quizId: data.quizId,
-        mode: data.mode,
-        isSoloQuiz: isSoloQuiz
+      const { quizId, count = 10 } = data;
+      this.logger.log(`[Online Quiz] User ${client.user.username} requested ${count} questions for quiz ${quizId}.`);
+
+      const session = this.synchronizedSessions.get(quizId);
+      const questions = (session?.questions?.length > 0)
+        ? session.questions // Use existing questions if available
+        : await this.getDeterministicQuestions(quizId, count); // Otherwise, generate new ones
+
+      client.emit('questionsLoaded', {
+        questions,
+        totalQuestions: questions.length,
+        quizId,
+        mode: 'online',
       });
-  
-      // Check if there's an existing session for this quiz
-      let session = this.synchronizedSessions.get(data.quizId);
-      this.logger.log(`📊 [REQUEST QUESTIONS] Session found for ${data.quizId}:`, !!session);
-  
-      if (session && session.questions.length > 0) {
-        // Use existing session questions (ensures consistency)
-        this.logger.log(`✅ [REQUEST QUESTIONS] Using existing session with ${session.questions.length} questions`);
-        
-        // EMIT CORRECT EVENT BASED ON MODE
-        const eventName = isSoloQuiz ? 'soloQuestionsLoaded' : 'questionsLoaded';
-        client.emit(eventName, {
-          questions: session.questions,
-          totalQuestions: session.questions.length,
-          quizId: data.quizId,
-          source: 'existing_session',
-          mode: isSoloQuiz ? 'solo' : 'online'
-        });
-  
-        return {
-          event: 'success',
-          data: { message: 'Questions loaded from existing session' }
-        };
-      } else {
-        // Generate new deterministic questions for this quiz session
-        this.logger.log(`🔄 [REQUEST QUESTIONS] No existing session, generating new questions`);
-        
-        try {
-          const questions = await this.getDeterministicQuestions(data.quizId, data.count);
-          this.logger.log(`✅ [REQUEST QUESTIONS] Generated ${questions.length} questions from database`);
-  
-          // Log first question for verification
-          if (questions.length > 0) {
-            this.logger.log(`📋 [REQUEST QUESTIONS] First question:`, {
-              id: questions[0].id,
-              question: questions[0].question.substring(0, 50) + '...',
-              options: questions[0].options.map(opt => ({
-                text: opt.text.substring(0, 20) + '...',
-                isCorrect: opt.isCorrect
-              }))
-            });
-          }
-  
-          // EMIT CORRECT EVENT BASED ON MODE
-          const eventName = isSoloQuiz ? 'soloQuestionsLoaded' : 'questionsLoaded';
-          this.logger.log(`📤 [REQUEST QUESTIONS] Emitting event: ${eventName} for ${isSoloQuiz ? 'SOLO' : 'ONLINE'} mode`);
-          
-          client.emit(eventName, {
-            questions,
-            totalQuestions: questions.length,
-            quizId: data.quizId,
-            source: 'new_generation',
-            mode: isSoloQuiz ? 'solo' : 'online'
-          });
-  
-          this.logger.log(`✅ [REQUEST QUESTIONS] Successfully sent ${questions.length} questions to client`);
-  
-          return {
-            event: 'success',
-            data: { message: 'New questions generated and sent' }
-          };
-        } catch (dbError) {
-          this.logger.error(`❌ [REQUEST QUESTIONS] Database error:`, dbError);
-          
-          // Send error to client with correct event name
-          const errorEventName = isSoloQuiz ? 'soloQuestionsError' : 'questionsError';
-          client.emit(errorEventName, {
-            message: 'Failed to load questions from database',
-            error: dbError.message,
-            quizId: data.quizId
-          });
-  
-          return {
-            event: 'error',
-            data: { message: 'Failed to load questions from database' }
-          };
-        }
-      }
     } catch (error) {
-      this.logger.error('❌ [REQUEST QUESTIONS] Unexpected error:', error);
-  
-      // Send error to client with correct event name
-      const isSoloQuiz = data.quizId?.startsWith('solo-quiz-') || data.mode === 'solo';
-      const errorEventName = isSoloQuiz ? 'soloQuestionsError' : 'questionsError';
-      
-      client.emit(errorEventName, {
-        message: 'Unexpected error loading questions',
-        error: error.message,
-        quizId: data.quizId
-      });
-  
-      return {
-        event: 'error',
-        data: { message: 'Failed to load questions' }
-      };
+      this.logger.error(`[Online Quiz] Error fetching questions for ${client.user.username} on quiz ${data.quizId}: ${error.message}`);
+      client.emit('questionsError', { message: 'Failed to load questions for the online quiz.' });
     }
   }
 
   // NEW: Create synchronized quiz session
+  /**
+   * Creates a new synchronized multiplayer quiz session.
+   * @param client The authenticated socket of the user creating the quiz.
+   * @param data The payload containing the quizId and the number of questions.
+   */
   @UseGuards(JwtAuthGuard)
   @SubscribeMessage('createSynchronizedQuiz')
   async handleCreateSynchronizedQuiz(
@@ -502,10 +326,9 @@ async handleRequestQuestionsDebug(
     @MessageBody() data: { quizId: string; questionCount: number },
   ) {
     try {
-      this.logger.log(`🎯 Creating synchronized quiz: ${data.quizId} with ${data.questionCount} questions`);
-  
+      this.logger.log(`[Sync Quiz] User ${client.user.username} is creating quiz ${data.quizId} with ${data.questionCount} questions.`);
       const questions = await this.getDeterministicQuestions(data.quizId, data.questionCount);
-  
+
       const session: SynchronizedQuizSession = {
         id: data.quizId,
         questions,
@@ -516,105 +339,80 @@ async handleRequestQuestionsDebug(
         timer: null,
         startTime: null,
       };
-  
+
       session.participants.set(client.user.userId, {
         userId: client.user.userId,
         username: client.user.username,
-        // Remove socketId: client.id,
         score: 0,
-        isEliminated: false
+        isEliminated: false,
       });
-  
+
       this.synchronizedSessions.set(data.quizId, session);
       client.join(data.quizId);
-  
-      this.logger.log(`✅ Created synchronized quiz ${data.quizId} with ${questions.length} questions`);
-  
-      return {
-        event: 'synchronizedQuizCreated',
-        data: {
-          quizId: data.quizId,
-          totalQuestions: questions.length,
-          totalParticipants: 1
-        }
-      };
+
+      this.logger.log(`[Sync Quiz] Successfully created quiz ${data.quizId} with ${questions.length} questions.`);
+      client.emit('synchronizedQuizCreated', {
+        quizId: data.quizId,
+        totalQuestions: questions.length,
+        totalParticipants: 1,
+      });
     } catch (error) {
-      this.logger.error('Error creating synchronized quiz:', error);
-      return {
-        event: 'error',
-        data: { message: 'Failed to create synchronized quiz' }
-      };
+      this.logger.error(`[Sync Quiz] Error creating synchronized quiz for user ${client.user.username}: ${error.message}`);
+      client.emit('error', { message: 'Failed to create the quiz. Please try again.' });
     }
   }
   // NEW: Join synchronized quiz
+  /**
+   * Joins a player to a synchronized multiplayer quiz.
+   * @param client The player's authenticated socket.
+   * @param data The payload containing the quizId to join.
+   */
   @UseGuards(JwtAuthGuard)
   @SubscribeMessage('joinSynchronizedQuiz')
   async handleJoinSynchronizedQuiz(
     @ConnectedSocket() client: AuthenticatedSocket,
     @MessageBody() data: { quizId: string },
   ) {
+    const session = this.synchronizedSessions.get(data.quizId);
+    if (!session) {
+      this.logger.warn(`[Sync Quiz] User ${client.user.username} attempted to join non-existent quiz ${data.quizId}.`);
+      return client.emit('error', { message: 'The quiz session you are trying to join does not exist.' });
+    }
+
+    if (session.participants.has(client.user.userId)) {
+      this.logger.warn(`[Sync Quiz] User ${client.user.username} attempted to join quiz ${data.quizId} again.`);
+      return client.emit('error', { message: 'You have already joined this quiz.' });
+    }
+
     try {
-      const session = this.synchronizedSessions.get(data.quizId);
-      if (!session) {
-        return {
-          event: 'error',
-          data: { message: 'Quiz session not found' }
-        };
-      }
-  
-      // Ensure questions exist for this session
-      if (!session.questions || session.questions.length === 0) {
-        return {
-          event: 'error',
-          data: { message: 'No questions available for this quiz session' }
-        };
-      }
-  
+      this.logger.log(`[Sync Quiz] User ${client.user.username} is joining quiz ${data.quizId}.`);
       session.participants.set(client.user.userId, {
         userId: client.user.userId,
         username: client.user.username,
-        // Remove socketId: client.id,
         score: 0,
-        isEliminated: false
+        isEliminated: false,
       });
-  
+
       client.join(data.quizId);
-  
-      this.logger.log(`✅ ${client.user.username} joined synchronized quiz ${data.quizId}`);
-  
-      const responseData: any = {
-        quizId: data.quizId,
-        questions: session.questions,
-        currentQuestionIndex: session.currentQuestionIndex,
-        totalQuestions: session.questions.length,
-        totalParticipants: session.participants.size,
-        isActive: session.isActive
-      };
-  
-      if (session.isActive && session.currentQuestionIndex >= 0) {
-        responseData.currentQuestion = session.questions[session.currentQuestionIndex];
-        if (session.startTime) {
-          responseData.timeRemaining = this.calculateTimeRemaining(session.startTime);
-        }
-      }
-  
-      client.emit('synchronizedQuizJoined', responseData);
-  
+
+      // Notify other players in the room
       client.to(data.quizId).emit('playerJoined', {
         userId: client.user.userId,
         username: client.user.username,
-        totalParticipants: session.participants.size
+        totalParticipants: session.participants.size,
       });
-  
-      return {
-        event: 'joinedSynchronizedQuiz',
-        data: { success: true }
-      };
+
+      // Send the full session details to the joining player
+      client.emit('synchronizedQuizJoined', {
+        quizId: data.quizId,
+        questions: session.questions,
+        participants: Array.from(session.participants.values()),
+        currentQuestionIndex: session.currentQuestionIndex,
+        isActive: session.isActive,
+      });
     } catch (error) {
-      return {
-        event: 'error',
-        data: { message: error.message }
-      };
+      this.logger.error(`[Sync Quiz] Error when user ${client.user.username} tried to join quiz ${data.quizId}: ${error.message}`);
+      client.emit('error', { message: 'An error occurred while trying to join the quiz.' });
     }
   }
 
@@ -879,6 +677,25 @@ async handleRequestQuestionsDebug(
         }
       }
     }
+  }
+
+  /**
+   * Formats questions into a consistent structure for the client.
+   * @param questions The raw question objects from the database.
+   * @returns A list of formatted questions.
+   */
+  private formatQuestions(questions: any[]): any[] {
+    return questions.map((q: any) => ({
+      id: q._id?.toString() || q.id?.toString(),
+      question: q.question,
+      options: (q.options || []).map((opt: any, index: number) => ({
+        id: index.toString(),
+        text: opt.text,
+        isCorrect: opt.isCorrect === true,
+      })),
+      category: q.category || 'General',
+      difficulty: q.difficulty || 'Medium',
+    }));
   }
 
   // Helper methods for deterministic question selection

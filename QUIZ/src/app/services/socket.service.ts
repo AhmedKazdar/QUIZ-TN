@@ -88,7 +88,10 @@ export class SocketService implements OnDestroy {
   private connectionTimeout: any = null;
   private isManualDisconnect = false;
 
-  constructor(private authService: AuthService) {
+  constructor(
+    private authService: AuthService,
+    private quizService: QuizService, // Injected for REST API fallback
+  ) {
     this.initializeConnection();
   }
 
@@ -477,17 +480,37 @@ export class SocketService implements OnDestroy {
 
   // ========== QUIZ QUESTIONS EMIT METHODS ==========
 
+  /**
+   * Emits a request for solo quiz questions.
+   * If the WebSocket is disconnected or the request times out, it falls back to the REST API.
+   * @param count The number of questions to fetch.
+   */
   emitGetSoloQuestions(count: number = 10): void {
     if (!this.isConnected()) {
-      console.error('[SocketService] ❌ Cannot get solo questions - not connected');
+      console.warn('[SocketService] WebSocket unavailable. Falling back to REST API for solo questions.');
+      this.quizService.getQuestions(count).subscribe({
+        next: (questions) => this.soloQuestionsLoadedSubject.next({ questions, totalQuestions: questions.length, mode: 'solo' }),
+        error: (err) => this.soloQuestionsErrorSubject.next(err),
+      });
       return;
     }
-    console.log('[SocketService] 📚 Getting solo questions via WebSocket:', count);
-    this.socket?.emit('getSoloQuestions', {
-      count,
-      timestamp: Date.now(),
-      mode: 'solo',
+
+    console.log(`[SocketService] Emitting 'getSoloQuestions' for ${count} questions.`);
+    this.socket?.emit('getSoloQuestions', { count, mode: 'solo' });
+
+    const fallbackTimeout = setTimeout(() => {
+      console.warn('[SocketService] WebSocket request timed out. Falling back to REST API.');
+      this.quizService.getQuestions(count).subscribe({
+        next: (questions) => this.soloQuestionsLoadedSubject.next({ questions, totalQuestions: questions.length, mode: 'solo' }),
+        error: (err) => this.soloQuestionsErrorSubject.next(err),
+      });
+    }, 5000); // 5-second timeout
+
+    const sub = this.onSoloQuestionsLoaded().subscribe(() => {
+      clearTimeout(fallbackTimeout);
+      sub.unsubscribe();
     });
+    this.subscriptions.push(sub);
   }
 
   emitRequestQuestions(payload: { quizId: string; count: number }): void {
