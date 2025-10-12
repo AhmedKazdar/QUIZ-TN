@@ -4,6 +4,7 @@ import { BehaviorSubject, Observable, Subject, Subscription } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { AuthService } from './auth.service';
 import { QuizService } from './quiz.service';
+import { Question } from './quiz.service';
 
 export interface OnlineUser {
   userId: string;
@@ -45,8 +46,7 @@ export class SocketService implements OnDestroy {
   private authenticationRequiredSubject = new Subject<any>();
 
   // Quiz Questions Subjects
-  private soloQuestionsLoadedSubject = new Subject<{ questions: QuizService[], totalQuestions: number, mode: string }>();
-  private synchronizedQuizCreatedSubject = new Subject<any>();
+  private soloQuestionsLoadedSubject = new Subject<{ questions: Question[]; totalQuestions: number; mode: string }>();  private synchronizedQuizCreatedSubject = new Subject<any>();
   private synchronizedQuizJoinedSubject = new Subject<any>();
   private moreQuestionsLoadedSubject = new Subject<{ questions: QuizService[], totalQuestions: number, mode: string }>();
   private questionLoadedSubject = new Subject<{ question: QuizService }>();
@@ -216,11 +216,13 @@ export class SocketService implements OnDestroy {
       this.reconnectAttempts = 0;
       this.isManualDisconnect = false;
       
-      // Request online users after connection
+      // Wait a bit for authentication to complete before marking as fully ready
       setTimeout(() => {
+        console.log('[SocketService] 🚀 Socket connection fully ready for requests');
+        // Request online users after connection is fully established
         this.requestOnlineUsers();
         this.emitDebugConnection();
-      }, 500);
+      }, 300);
     });
 
     this.socket.on('disconnect', (reason: any) => {
@@ -325,7 +327,7 @@ export class SocketService implements OnDestroy {
     });
 
     this.socket.on('soloQuestionsError', (data: any) => {
-      console.error('[SocketService] ❌ Solo questions error:', data);
+      console.error('[SocketService] ❌ Solo questions error received:', data);
       this.soloQuestionsErrorSubject.next(data);
     });
 
@@ -846,7 +848,7 @@ export class SocketService implements OnDestroy {
   }
 
   // Quiz Questions Observables
-  onSoloQuestionsLoaded(): Observable<{ questions: QuizService[]; totalQuestions: number; mode: string }> {
+  onSoloQuestionsLoaded(): Observable<{ questions: Question[]; totalQuestions: number; mode: string }> {
     return this.soloQuestionsLoadedSubject.asObservable();
   }
 

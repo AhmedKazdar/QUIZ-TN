@@ -120,6 +120,7 @@ export class QuizComponent implements OnInit, OnDestroy {
     });
   }
   ngOnDestroy(): void {
+    this.quizService.disconnectSocket();
     this.cleanupSubscriptions();
     if (this.answerWaitTimer) clearInterval(this.answerWaitTimer);
     if (this.emergencyFallbackTimeout) clearTimeout(this.emergencyFallbackTimeout);
@@ -190,21 +191,34 @@ export class QuizComponent implements OnInit, OnDestroy {
   }
   /* ------------------- Quiz Flow ------------------- */
   private initializeQuiz(): void {
-    // Connect WebSocket first for both modes
-    this.quizService.connectSocket();
-    
+    // Only connect WebSocket for online mode, not for solo mode
+    if (this.mode === 'online') {
+      console.log('🎯 Online mode: Enabling WebSocket connection');
+      this.quizService.connectSocket(); 
+      this.setupSocketListeners();
+    } else {
+      console.log('🎯 Solo mode: WebSocket connection not needed');
+      // Don't connect WebSocket for solo mode
+    }
+  
     if (this.mode === 'online' && !this.isAuthenticated) {
       this.router.navigate(['/login'], { queryParams: { returnUrl: '/quiz/online' } });
       return;
     }
   
-    // Set up socket listeners for both modes
-    this.setupSocketListeners();
+    // Set up socket listeners only if needed
+    if (this.mode === 'online') {
+      this.setupSocketListeners();
+    }
     
-    // Wait a bit for WebSocket connection before starting quiz
-    setTimeout(() => {
-      this.startQuiz(this.mode);
-    }, 1000);
+    // Start quiz immediately for solo mode, wait a bit for online mode
+    if (this.mode === 'solo') {
+      this.startQuiz('solo');
+    } else {
+      setTimeout(() => {
+        this.startQuiz('online');
+      }, 1000);
+    }
   }
   private setupSocketListeners(): void {
     this.quizService.connectSocket();
@@ -215,21 +229,21 @@ export class QuizComponent implements OnInit, OnDestroy {
     this.socketSubscriptions = new Subscription();
 
      // Add solo questions listener
-  const soloQuestionsSub = this.socketService.onSoloQuestionsLoaded().subscribe((data: any) => {
-    console.log('📝 Received solo questions from server:', data);
-    if (data.questions && this.mode === 'solo') {
-      this.questions = data.questions;
-      this.answers = new Array(this.questions.length).fill(null);
-      this.loading = false;
-      this.cdr.detectChanges();
-    }
+     const soloQuestionsSub = this.socketService.onQuestionsLoaded().subscribe((data: any) => {
+      console.log('📝 Received questions from server:', data);
+      if (data.questions && this.mode === 'solo') {
+        this.questions = data.questions;
+        this.answers = new Array(this.questions.length).fill(null);
+        this.loading = false;
+        this.cdr.detectChanges();
+      }
+    });
+  const usersSub = this.quizService.getOnlineUsers().subscribe((users) => {
+    this.onlineUsers = users || [];
+    console.log('👥 Online users updated:', this.onlineUsers.length);
+    this.cdr.detectChanges();
   });
 
-    const usersSub = this.quizService.getOnlineUsers().subscribe((users) => {
-      this.onlineUsers = users || [];
-      console.log('👥 Online users updated:', this.onlineUsers.length);
-      this.cdr.detectChanges();
-    });
 
     const statusSub = this.quizService.getSocketConnectionStatus().subscribe((connected) => {
       const wasConnected = this.isSocketConnected;
@@ -240,6 +254,16 @@ export class QuizComponent implements OnInit, OnDestroy {
       }
     });
 
+/*     const userConnectedSub = this.socketService.on('userConnected').subscribe((data: any) => {
+      console.log('➕ User connected:', data.username);
+      this.quizService.requestOnlineUsers(); // Refresh the list
+    });
+  
+    const userDisconnectedSub = this.socketService.on('userDisconnected').subscribe((data: any) => {
+      console.log('➖ User disconnected:', data.username);
+      this.quizService.requestOnlineUsers(); // Refresh the list
+    });
+ */
     const newQuestionSub = this.quizService.onNewQuestion().subscribe((data: any) => {
       console.log('📝 Received new question from server:', data);
       this.handleNewQuestion(data);
@@ -280,6 +304,8 @@ export class QuizComponent implements OnInit, OnDestroy {
     const playerReadySub = this.quizService.onPlayerReady().subscribe((data: any) => {
       console.log(`✅ Player ${data?.username} is ready for question ${data?.questionIndex}`);
     });
+
+    
 
     this.socketSubscriptions.add(usersSub);
     this.socketSubscriptions.add(statusSub);
@@ -498,118 +524,111 @@ export class QuizComponent implements OnInit, OnDestroy {
     });
   }
 
-  private loadQuestions(): void {
-    if (this.mode === 'solo') {
-      console.log('🔄 Loading solo questions via WebSocket...');
+ // add connection debugging
+ private loadQuestions(): void {
+  console.log('🔄 Checking WebSocket connection state...');
+  console.log('📡 Socket connected:', this.quizService.isSocketConnected());
+  
+  if (this.mode === 'solo') {
+    this.loadSoloQuestions();
+  } else {
+    // Online mode
+    this.loading = true;
+    console.log('🔄 Online mode: Requesting 10 questions...');
+
+    this.questions = [];
+    this.answers = [];
+
+    if (this.quizService.isSocketConnected()) {
+      console.log('📡 Socket is connected, requesting online questions...');
       
-      if (!this.quizService.isSocketConnected()) {
-        console.log('⏳ WebSocket not ready, waiting for connection...');
-        this.loading = true;
-        
-        const connectionCheck = setTimeout(() => {
-          if (!this.quizService.isSocketConnected()) {
-            console.log('❌ WebSocket still not connected, using fallback');
-            this.loadFallbackQuestions();
-          } else {
-            console.log('✅ WebSocket connected, proceeding with solo questions');
-            this.loadSoloQuestions();
+      // Use type assertion to avoid TypeScript error for mode parameter
+      this.quizService.emitRequestQuestions({
+        quizId: this.quizId,
+        count: 10,
+        mode: 'online'
+      } as any);
+
+      // Listen for questions loaded event
+      const questionsSub = this.quizService.onQuestionsLoaded().subscribe({
+        next: (data: any) => {
+          console.log('✅ Online questions loaded:', data);
+          if (data.questions && Array.isArray(data.questions)) {
+            this.questions = data.questions;
+            this.answers = new Array(this.questions.length).fill(null);
+            this.totalOnlineQuestions = this.questions.length;
+            this.loading = false;
+            
+            console.log(`✅ Online mode: All ${this.questions.length} questions loaded`);
+            
+            this.timeRemaining = this.questionTimeLimit;
+            this.questionStartTime = Date.now();
+            this.startTimer(this.questionTimeLimit);
+            
+            this.cdr.detectChanges();
           }
-        }, 2000);
-        
-        const statusSub = this.quizService.getSocketConnectionStatus().subscribe({
-          next: (connected) => {
-            if (connected) {
-              console.log('✅ WebSocket connected via status listener');
-              clearTimeout(connectionCheck);
-              this.loadSoloQuestions();
-            }
-          }
-        });
-        
-        this.socketSubscriptions.add(statusSub);
-      } else {
-        this.loadSoloQuestions();
-      }
+        },
+        error: (error: any) => {
+          console.error('❌ Failed to load online questions:', error);
+          this.loadFallbackQuestions();
+        }
+      });
+
+      this.socketSubscriptions.add(questionsSub);
+
+      // Timeout fallback
+      setTimeout(() => {
+        if (this.loading) {
+          console.log('⏰ Timeout: Loading fallback questions for online mode');
+          this.loadFallbackQuestions();
+        }
+      }, 10000);
+
     } else {
-      // Online mode - FIXED: Request 10 questions
-      this.loading = true;
-      console.log('🔄 Online mode: Requesting 10 questions...');
-  
-      this.questions = [];
-      this.answers = [];
-  
-      if (this.quizService.isSocketConnected()) {
-        console.log('📡 Socket is connected, requesting online questions...');
-        
-        // FIX: Use emitRequestQuestions with proper object format
-        this.quizService.emitRequestQuestions({
-          quizId: this.quizId,
-          count: 10  // Request 10 questions
-        });
-  
-        // Listen for questions loaded event
-        const questionsSub = this.quizService.onQuestionsLoaded().subscribe({
-          next: (data: any) => {
-            console.log('✅ Online questions loaded:', data);
-            if (data.questions && Array.isArray(data.questions)) {
-              this.questions = data.questions;
-              this.answers = new Array(this.questions.length).fill(null);
-              this.totalOnlineQuestions = this.questions.length;
-              this.loading = false;
-              
-              console.log(`✅ Online mode: All ${this.questions.length} questions loaded`);
-              
-              this.timeRemaining = this.questionTimeLimit;
-              this.questionStartTime = Date.now();
-              this.startTimer(this.questionTimeLimit);
-              
-              this.cdr.detectChanges();
-            }
-          },
-          error: (error: any) => {
-            console.error('❌ Failed to load online questions:', error);
-            this.loadFallbackQuestions();
-          }
-        });
-  
-        this.socketSubscriptions.add(questionsSub);
-  
-        // Timeout fallback
-        setTimeout(() => {
-          if (this.loading) {
-            console.log('⏰ Timeout: Loading fallback questions for online mode');
-            this.loadFallbackQuestions();
-          }
-        }, 10000);
-  
-      } else {
-        console.log('❌ Socket not connected for online mode, using fallback');
-        this.loadFallbackQuestions();
-      }
+      console.log('❌ Socket not connected for online mode, using fallback');
+      this.loadFallbackQuestions();
     }
   }
-  
+}
 
-  private loadSoloQuestions(): void {
-    console.log('🎯 Loading 10 solo questions...');
-    this.quizService.getSoloQuestions(10).subscribe({
-      next: (questions: Question[]) => {
-        console.log('✅ Solo questions loaded successfully:', questions);
-        this.questions = questions || [];
+private loadSoloQuestions(): void {
+  console.log('🎯 Loading 10 solo questions...');
+  this.loading = true;
+  this.error = null;
+  this.quizService.getSoloQuestions(10).subscribe({
+    next: (questions: Question[]) => {
+      console.log('✅ Solo questions loaded successfully:', questions?.length);
+      if (questions && questions.length > 0) {
+        this.questions = questions;
         this.answers = new Array(this.questions.length).fill(null);
-        this.totalTime = this.questions.length * 30;
+        this.totalTime = this.questions.length * 30;  // Solo: 30s per question total
         this.timeRemaining = this.totalTime;
         this.startTimer(this.totalTime);
         this.loading = false;
+        this.quizStarted = true;
         console.log('✅ Solo mode: All questions loaded:', this.questions.length);
-        this.cdr.detectChanges();
-      },
-      error: (error: any) => {
-        console.error('❌ Failed to load solo questions via WebSocket:', error);
-        this.loadFallbackQuestions();
-      },
-    });
-  }
+      } else {
+        this.error = 'No questions available. Using fallback.';
+        this.loadDirectQuestions();
+      }
+      this.cdr.detectChanges();
+    },
+    error: (error: any) => {
+      console.error('❌ Failed to load solo questions:', error);
+      let userError = 'Failed to load questions.';
+      if (error.message.includes('timeout')) {
+        userError = 'Server timeout. Please try again.';
+      } else if (error.message.includes('Unauthorized')) {
+        userError = 'Authentication issue. Please log in again.';
+        this.router.navigate(['/login']);
+      }
+      this.error = userError;
+      this.loading = false;
+      this.loadFallbackQuestions();  // Try fallback
+      this.cdr.detectChanges();
+    },
+  });
+}
 
   private loadFallbackQuestions(): void {
     console.log('🔄 Loading fallback questions...');

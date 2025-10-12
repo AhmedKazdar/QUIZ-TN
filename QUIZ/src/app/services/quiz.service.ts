@@ -1,8 +1,8 @@
 import { Injectable } from '@angular/core';
-import { Observable, of, BehaviorSubject, Subscription } from 'rxjs';
+import { Observable, of, BehaviorSubject, Subscription, throwError } from 'rxjs';
 import { tap, timeout, catchError } from 'rxjs/operators';
 import { SocketService, OnlineUser } from './socket.service';
-
+import { filter, take } from 'rxjs/operators';
 export interface AnswerOption {
   id: string;
   text: string;
@@ -130,7 +130,7 @@ export class QuizService {
     return this.getOnlineQuestions(limit);
   }
 
-  emitRequestQuestions(data: { quizId: string; count: number }): void {
+  emitRequestQuestions(data: { quizId: string; count: number; mode?: string }): void {
     this.socketService.emitRequestQuestions(data);
   }
   
@@ -142,77 +142,131 @@ export class QuizService {
   // WebSocket method for solo questions
   getSoloQuestions(count: number): Observable<Question[]> {
     return new Observable((observer) => {
-      // Ensure WebSocket is connected first
-      if (!this.socketService.isConnected()) {
-        console.log('🔄 WebSocket not connected, attempting to connect...');
-        this.socketService.connect();
+      // Use a connection readiness check instead of just isConnected()
+      this.waitForSocketReady().pipe(
+        timeout(20000), // 20s for questions (DB might be slow)
+        catchError((error: any) => {
+          console.error('❌ Timeout waiting for solo questions:', error);
+          return throwError(() => new Error('Questions request timed out. Please try again.'));
+        })
+      ).subscribe({
+        next: (ready) => {
+          if (ready) {
+            console.log(`🎯 WebSocket ready, requesting ${count} solo questions`);
+            this.requestSoloQuestions(count, observer);
+          } else {
+            observer.error(new Error('WebSocket connection failed'));
+          }
+        },
+        error: (error) => {
+          observer.error(error);
+        }
+      });
+    });
+  }
+
+
+  private waitForSocketReady(): Observable<boolean> {
+    return new Observable((observer) => {
+      // If already connected and we've received authentication success
+      if (this.socketService.isConnected()) {
+        console.log('✅ Socket already connected, checking authentication...');
         
-        // Wait for connection or timeout
-        const connectionSub = this.socketService.getConnectionStatus().pipe(
-          timeout(5000)
+        // Listen for authentication success or check if we're already authenticated
+        const authSub = this.socketService.onAuthenticationSuccess().pipe(
+          timeout(5000),
+          catchError(() => of(null)) // Timeout is OK, maybe we're already authenticated
         ).subscribe({
-          next: (connected) => {
-            if (connected) {
-              console.log('✅ WebSocket connected, now requesting questions');
-              this.requestSoloQuestions(count, observer);
-            }
+          next: (authData) => {
+            console.log('✅ Authentication confirmed, socket is ready');
+            observer.next(true);
+            observer.complete();
           },
           error: (error) => {
-            console.error('❌ WebSocket connection timeout:', error);
-            observer.error(new Error('Failed to connect to WebSocket'));
+            console.warn('⚠️ Auth check timeout, proceeding anyway');
+            observer.next(true); // Proceed even if auth times out
+            observer.complete();
           }
         });
         
-        this.socketSubscriptions.add(connectionSub);
+        // Also check if we're already authenticated
+        setTimeout(() => {
+          authSub.unsubscribe();
+          observer.next(true);
+          observer.complete();
+        }, 1000);
+        
       } else {
-        console.log('✅ WebSocket already connected, requesting questions');
-        this.requestSoloQuestions(count, observer);
+        console.log('🔄 Socket not connected, waiting for connection...');
+        
+        // Wait for connection
+        const connectionSub = this.socketService.getConnectionStatus().pipe(
+          filter(connected => connected === true),
+          timeout(10000),
+          take(1)
+        ).subscribe({
+          next: (connected) => {
+            if (connected) {
+              console.log('✅ Socket connected, now checking authentication...');
+              // Give a brief moment for authentication to complete
+              setTimeout(() => {
+                observer.next(true);
+                observer.complete();
+              }, 500);
+            }
+          },
+          error: (error) => {
+            observer.error(new Error('Failed to establish WebSocket connection'));
+          }
+        });
       }
     });
   }
   
-  
-  
- // In your QuizService, update the requestSoloQuestions method:
-
- private requestSoloQuestions(count: number, observer: any): void {
-  console.log(`🎯 Requesting ${count} solo questions`);
-  
-  const questionsSub = this.socketService.onSoloQuestionsLoaded()
-    .pipe(timeout(10000))
-    .subscribe({
-      next: (data: any) => {
-        console.log('✅ Received soloQuestionsLoaded event:', data);
-        if (data.questions && Array.isArray(data.questions)) {
-          this.currentQuiz = data.questions;
-          this.currentAnswers = new Array(data.questions.length).fill(-1);
-          observer.next(data.questions);
-          observer.complete();
-        } else {
-          console.warn('❌ Invalid questions data received:', data);
-          observer.error(new Error('Invalid questions data received from server'));
+  private requestSoloQuestions(count: number, observer: any): void {
+    console.log(`🎯 Requesting ${count} solo questions`);
+    
+    // Use the correct method for solo questions
+    this.socketService.emitGetSoloQuestions(count);
+    
+    // Set up question subscription with timeout
+    const questionsSub = this.socketService.onSoloQuestionsLoaded()
+      .pipe(
+        timeout(15000), // 15 second timeout for questions
+        catchError((error: any) => {
+          console.error('❌ Timeout waiting for solo questions:', error);
+          return throwError(() => new Error('Questions request timed out. Please try again.'));
+        })
+      )
+      .subscribe({
+        next: (data: any) => {
+          console.log('✅ Received soloQuestionsLoaded event:', data);
+          if (data?.questions?.length > 0) {
+            this.currentQuiz = data.questions;
+            this.currentAnswers = new Array(data.questions.length).fill(-1);
+            observer.next(data.questions);
+            observer.complete();
+          } else {
+            console.warn('❌ No questions received in the response');
+            observer.error(new Error('No questions received from server'));
+          }
+        },
+        error: (error: any) => {
+          console.error('❌ Error in soloQuestionsLoaded subscription:', error);
+          observer.error(error);
         }
-      },
-      error: (error) => {
-        console.error('❌ Error in soloQuestionsLoaded subscription:', error);
-        observer.error(error);
-      }
-    });
-
-  const errorSub = this.socketService.onSoloQuestionsError().subscribe((error: any) => {
-    console.error('❌ Received soloQuestionsError event:', error);
-    observer.error(new Error(error.message || 'Failed to load questions'));
-  });
-
-  this.socketSubscriptions.add(questionsSub);
-  this.socketSubscriptions.add(errorSub);
-
-  // FIXED: Call the correct method with correct parameter
-  this.socketService.emitRequestQuestions({
-    count: count,
-    quizId: 'solo-quiz-' + Date.now(),
-  });
-}
+      });
+  
+    const errorSub = this.socketService.onSoloQuestionsError()
+      .subscribe((error: any) => {
+        console.error('❌ Received soloQuestionsError event:', error);
+        observer.error(new Error(error?.message || 'Failed to load questions'));
+      });
+  
+    // Add subscriptions for cleanup
+    this.socketSubscriptions.add(questionsSub);
+    this.socketSubscriptions.add(errorSub);
+  }
   // WebSocket method for online questions
   getOnlineQuestions(count = 10): Observable<Question[]> {
     return new Observable((observer) => {
@@ -266,6 +320,9 @@ export class QuizService {
     });
   }
 
+  disconnectSocket(): void {
+    this.socketService.disconnect();
+  }
 
   private ensureSocketConnection(): Observable<boolean> {
     return new Observable((observer) => {

@@ -19,6 +19,55 @@ export class QuizController {
     return this.quizService.create(createQuizDto);
   }
 
+
+  @Get('health/database')
+  @ApiOperation({ summary: 'Check database health and questions' })
+  async checkDatabaseHealth() {
+    try {
+      console.log('🔍 [HEALTH CHECK] Checking database health...');
+      
+      // Check connection with proper null checks
+      const db = this.quizService['quizModel'].db;
+      if (!db || !db.db) {
+        return {
+          success: false,
+          database: 'disconnected',
+          error: 'Database connection not established'
+        };
+      }
+      
+      const adminDb = db.db.admin();
+      const pingResult = await adminDb.ping();
+      
+      // Get stats
+      const totalQuestions = await this.quizService['quizModel'].countDocuments();
+      const sampleQuestions = await this.quizService['quizModel'].find().limit(2).lean();
+      
+      console.log('✅ [HEALTH CHECK] Database health check passed');
+      
+      return {
+        success: true,
+        database: 'connected',
+        totalQuestions,
+        sampleQuestions: sampleQuestions.map(q => ({
+          id: q._id,
+          question: q.question,
+          options: q.options?.map(opt => ({
+            text: opt.text,
+            isCorrect: opt.isCorrect
+          }))
+        }))
+      };
+    } catch (error) {
+      console.error('❌ [HEALTH CHECK] Database health check failed:', error);
+      return {
+        success: false,
+        database: 'disconnected',
+        error: error.message
+      };
+    }
+  }
+
   @Get()
   @ApiOperation({ summary: 'Get all quizzes' })
   @ApiResponse({ status: 200, description: 'Returns all quizzes' })

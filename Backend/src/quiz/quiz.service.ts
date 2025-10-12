@@ -39,45 +39,37 @@ export class QuizService {
   /**
    * Get a specified number of random questions from the database
    */
-  async getRandomQuestions(count: number): Promise<QuizQuestion[]> {
+  async getRandomQuestions(count: number): Promise<any[]> {
     try {
-      console.log(`🔍 Getting ${count} random questions from database...`);
-
-      // Fetch questions directly from MongoDB with all fields
-      const allQuestions = await this.quizModel.find().lean().exec();
-
-      if (!allQuestions || allQuestions.length === 0) {
-        throw new Error('No questions available in database');
+      console.log(`🎯 [QUIZ SERVICE] Getting ${count} random questions`);
+      
+      // Use quizModel instead of questionModel
+      const questions = await this.quizModel.aggregate([
+        { $sample: { size: count } }
+      ]).exec();
+  
+      console.log(`✅ [QUIZ SERVICE] Retrieved ${questions.length} questions from database`);
+      
+      // Log first question for debugging
+      if (questions.length > 0) {
+        console.log(`📋 [QUIZ SERVICE] First question details:`, {
+          id: questions[0]._id?.toString(),
+          question: questions[0].question,
+          optionsCount: questions[0].options?.length,
+          options: questions[0].options?.map(opt => ({
+            text: opt.text?.substring(0, 20) + '...',
+            isCorrect: opt.isCorrect
+          }))
+        });
       }
-
-      // Transform questions safely
-      const transformedQuestions = allQuestions.map((q: any) => ({
-        _id: q._id.toString(),
-        id: q._id.toString(),
-        question: q.question,
-        options: Array.isArray(q.options)
-          ? q.options.map((opt, idx) => ({
-              id: idx.toString(),
-              text: opt.text,
-              isCorrect: opt.isCorrect,
-            }))
-          : [], // ensure options always exists
-        category: q.category || 'General',
-        difficulty: q.difficulty || 'Medium',
-      }));
-
-      // Random shuffle
-      const shuffled = [...transformedQuestions]
-        .sort(() => Math.random() - 0.5)
-        .slice(0, Math.min(count, transformedQuestions.length));
-
-      console.log(`✅ Returning ${shuffled.length} shuffled questions`);
-      return shuffled;
+      
+      return questions;
     } catch (error) {
-      console.error('❌ Error getting random questions:', error);
-      throw new Error(`Failed to get random questions: ${error.message}`);
+      console.error(`❌ [QUIZ SERVICE] Error getting random questions:`, error);
+      throw error;
     }
   }
+  
 
   async getAllQuestions(): Promise<QuizQuestion[]> {
     try {
@@ -101,6 +93,9 @@ export class QuizService {
       throw new Error('Failed to fetch all questions');
     }
   }
+
+
+  
 
   async submitResponse(response: SubmitQuizResponseDto, userId: string) {
     const quiz = await this.quizModel.findById(response.questionId);
@@ -196,6 +191,8 @@ export class QuizService {
       throw new Error('Failed to fetch quizzes');
     }
   }
+
+  
 
   async delete(id: string): Promise<void> {
     const result = await this.quizModel.deleteOne({ _id: id }).exec();

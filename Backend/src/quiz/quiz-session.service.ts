@@ -14,7 +14,6 @@ export interface QuizSession {
   timeRemaining: number;
   participants: {
     userId: string;
-    socketId: string;
     score: number;
     answers: { questionIndex: number; answer: number; isCorrect: boolean }[];
     isEliminated: boolean;
@@ -57,7 +56,6 @@ export class QuizSessionService {
       timeRemaining: 0,
       participants: [{
         userId: hostId,
-        socketId,
         score: 0,
         answers: [],
         isEliminated: false,
@@ -82,7 +80,6 @@ export class QuizSessionService {
     if (!existingParticipant) {
       session.participants.push({
         userId,
-        socketId,
         score: 0,
         answers: [],
         isEliminated: false,
@@ -90,7 +87,6 @@ export class QuizSessionService {
       this.logger.log(`User ${userId} joined session ${sessionId}`);
     } else {
       // Update socket ID if reconnecting
-      existingParticipant.socketId = socketId;
       this.logger.log(`User ${userId} reconnected to session ${sessionId}`);
     }
 
@@ -134,7 +130,7 @@ export class QuizSessionService {
       participant.score += 10; // Award points for correct answer
     } else {
       participant.isEliminated = true;
-      this.emitToParticipant(participant.socketId, 'eliminated', {
+      this.emitToParticipant(participant.userId, 'eliminated', {
         questionIndex: session.currentQuestionIndex,
         correctAnswer: currentQuestion.correctAnswer,
       });
@@ -176,7 +172,7 @@ export class QuizSessionService {
         
         if (!answered) {
           participant.isEliminated = true;
-          this.emitToParticipant(participant.socketId, 'eliminated', {
+          this.emitToParticipant(participant.userId, 'eliminated', {
             questionIndex: session.currentQuestionIndex,
             timeUp: true
           });
