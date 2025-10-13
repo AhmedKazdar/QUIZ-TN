@@ -12,6 +12,9 @@ import { HealthController } from './health/health.controller';
 import { QuizTimeModule } from './quiz-time/quiz-time.module';
 import { PlayerModule } from './player/player.module';
 import { QuizModule } from './quiz/quiz.module';
+import { WebSocketModule } from './websocket/websocket.module';
+
+
 
 @Module({
   controllers: [HealthController],
@@ -34,6 +37,7 @@ import { QuizModule } from './quiz/quiz.module';
     WebhookModule,
     QuizTimeModule,
     PlayerModule,
+     WebSocketModule,
     QuizModule,
   ],
   providers: [],

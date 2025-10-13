@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { QuizGateway } from './quiz.gateway';
+import { QuizGateway } from '../websocket/quiz.gateway';
 import { QuizSessionService } from './quiz-session.service';
 import { QuizService } from './quiz.service';
 import { MongooseModule } from '@nestjs/mongoose';

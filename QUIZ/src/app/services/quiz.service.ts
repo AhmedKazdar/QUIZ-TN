@@ -3,6 +3,7 @@ import { Observable, of, BehaviorSubject, Subscription, throwError } from 'rxjs'
 import { tap, timeout, catchError } from 'rxjs/operators';
 import { SocketService, OnlineUser } from './socket.service';
 import { filter, take } from 'rxjs/operators';
+
 export interface AnswerOption {
   id: string;
   text: string;
@@ -64,8 +65,24 @@ export class QuizService {
       this.onlineUsers$.next(users || []);
     });
 
+    // Listen for user connection events
+    const userConnectedSub = this.socketService.onUserConnected().subscribe((user: OnlineUser) => {
+      const currentUsers = this.onlineUsers$.value;
+      if (!currentUsers.find(u => u.userId === user.userId)) {
+        this.onlineUsers$.next([...currentUsers, user]);
+      }
+    });
+
+    // Listen for user disconnection events
+    const userDisconnectedSub = this.socketService.onUserDisconnected().subscribe((userId: string) => {
+      const currentUsers = this.onlineUsers$.value;
+      this.onlineUsers$.next(currentUsers.filter(user => user.userId !== userId));
+    });
+
     this.socketSubscriptions.add(connectionSub);
     this.socketSubscriptions.add(usersSub);
+    this.socketSubscriptions.add(userConnectedSub);
+    this.socketSubscriptions.add(userDisconnectedSub);
   }
 
   getMockQuestions(count = 10): Observable<Question[]> {
@@ -134,7 +151,6 @@ export class QuizService {
     this.socketService.emitRequestQuestions(data);
   }
   
-  // CORRECTED: Add the missing onQuestionsLoaded method
   onQuestionsLoaded(): Observable<any> {
     return this.socketService.onQuestionsLoaded();
   }
@@ -142,9 +158,8 @@ export class QuizService {
   // WebSocket method for solo questions
   getSoloQuestions(count: number): Observable<Question[]> {
     return new Observable((observer) => {
-      // Use a connection readiness check instead of just isConnected()
       this.waitForSocketReady().pipe(
-        timeout(20000), // 20s for questions (DB might be slow)
+        timeout(20000),
         catchError((error: any) => {
           console.error('❌ Timeout waiting for solo questions:', error);
           return throwError(() => new Error('Questions request timed out. Please try again.'));
@@ -165,17 +180,14 @@ export class QuizService {
     });
   }
 
-
   private waitForSocketReady(): Observable<boolean> {
     return new Observable((observer) => {
-      // If already connected and we've received authentication success
       if (this.socketService.isConnected()) {
         console.log('✅ Socket already connected, checking authentication...');
         
-        // Listen for authentication success or check if we're already authenticated
         const authSub = this.socketService.onAuthenticationSuccess().pipe(
           timeout(5000),
-          catchError(() => of(null)) // Timeout is OK, maybe we're already authenticated
+          catchError(() => of(null))
         ).subscribe({
           next: (authData) => {
             console.log('✅ Authentication confirmed, socket is ready');
@@ -184,12 +196,11 @@ export class QuizService {
           },
           error: (error) => {
             console.warn('⚠️ Auth check timeout, proceeding anyway');
-            observer.next(true); // Proceed even if auth times out
+            observer.next(true);
             observer.complete();
           }
         });
         
-        // Also check if we're already authenticated
         setTimeout(() => {
           authSub.unsubscribe();
           observer.next(true);
@@ -199,7 +210,6 @@ export class QuizService {
       } else {
         console.log('🔄 Socket not connected, waiting for connection...');
         
-        // Wait for connection
         const connectionSub = this.socketService.getConnectionStatus().pipe(
           filter(connected => connected === true),
           timeout(10000),
@@ -208,7 +218,6 @@ export class QuizService {
           next: (connected) => {
             if (connected) {
               console.log('✅ Socket connected, now checking authentication...');
-              // Give a brief moment for authentication to complete
               setTimeout(() => {
                 observer.next(true);
                 observer.complete();
@@ -232,7 +241,7 @@ export class QuizService {
     // Set up question subscription with timeout
     const questionsSub = this.socketService.onSoloQuestionsLoaded()
       .pipe(
-        timeout(15000), // 15 second timeout for questions
+        timeout(15000),
         catchError((error: any) => {
           console.error('❌ Timeout waiting for solo questions:', error);
           return throwError(() => new Error('Questions request timed out. Please try again.'));
@@ -263,10 +272,10 @@ export class QuizService {
         observer.error(new Error(error?.message || 'Failed to load questions'));
       });
   
-    // Add subscriptions for cleanup
     this.socketSubscriptions.add(questionsSub);
     this.socketSubscriptions.add(errorSub);
   }
+
   // WebSocket method for online questions
   getOnlineQuestions(count = 10): Observable<Question[]> {
     return new Observable((observer) => {
@@ -295,18 +304,6 @@ export class QuizService {
 
       this.socketSubscriptions.add(questionsSub);
 
-      // Also listen for synchronized quiz events as fallback
-      const syncJoinSub = this.socketService.onSynchronizedQuizJoined().subscribe((data: any) => {
-        if (data.questions && Array.isArray(data.questions)) {
-          this.currentQuiz = data.questions;
-          this.currentAnswers = new Array(data.questions.length).fill(-1);
-          observer.next(data.questions);
-          observer.complete();
-        }
-      });
-      
-      this.socketSubscriptions.add(syncJoinSub);
-
       // Emit the request
       this.socketService.emitRequestQuestions({
         quizId: 'online-quiz-' + Date.now(),
@@ -315,9 +312,65 @@ export class QuizService {
 
       return () => {
         this.socketSubscriptions.remove(questionsSub);
-        this.socketSubscriptions.remove(syncJoinSub);
       };
     });
+  }
+
+  // Synchronized Quiz Methods
+  createSynchronizedQuiz(quizId: string, questionCount: number): void {
+    this.socketService.emitCreateSynchronizedQuiz(quizId, questionCount);
+  }
+
+  joinSynchronizedQuiz(quizId: string, userId: string): void {
+    this.socketService.emitJoinSynchronizedQuiz(quizId, userId);
+  }
+
+  onSynchronizedQuizCreated(): Observable<any> {
+    return this.socketService.onSynchronizedQuizCreated();
+  }
+
+  onSynchronizedQuizJoined(): Observable<any> {
+    return this.socketService.onSynchronizedQuizJoined();
+  }
+
+  onPlayerJoined(): Observable<any> {
+    return this.socketService.onPlayerJoined();
+  }
+
+  // Answer submission for synchronized quizzes
+  submitSynchronizedAnswer(quizId: string, questionIndex: number, answerIndex: number): void {
+    this.socketService.emitSubmitSynchronizedAnswer(quizId, questionIndex, answerIndex);
+  }
+
+  onSynchronizedAnswerResult(): Observable<any> {
+    return this.socketService.onSynchronizedAnswerResult();
+  }
+
+  onPlayerAnsweredSynchronized(): Observable<any> {
+    return this.socketService.onPlayerAnsweredSynchronized();
+  }
+
+  // Regular answer submission
+  submitAnswer(data: { 
+    questionId: string; 
+    answerIndex: number;
+    timeSpent: number;
+    mode: 'solo' | 'online';
+    quizId?: string;
+    questionIndex?: number;
+  }): void {
+    this.socketService.emitSubmitAnswer(
+      data.questionId,
+      data.answerIndex,
+      data.timeSpent,
+      data.mode,
+      data.quizId,
+      data.questionIndex
+    );
+  }
+
+  onAnswerResult(): Observable<any> {
+    return this.socketService.onAnswerResult();
   }
 
   disconnectSocket(): void {
@@ -371,6 +424,19 @@ export class QuizService {
 
   getOnlineUsers(): Observable<OnlineUser[]> {
     return this.onlineUsers$.asObservable();
+  }
+
+  // Authentication events
+  onAuthenticationSuccess(): Observable<any> {
+    return this.socketService.onAuthenticationSuccess();
+  }
+
+  onAuthenticationError(): Observable<any> {
+    return this.socketService.onAuthenticationError();
+  }
+
+  onAuthenticationRequired(): Observable<any> {
+    return this.socketService.onAuthenticationRequired();
   }
 
   // Game event listeners

@@ -17,8 +17,8 @@ interface OnlineUser {
 }
 
 @WebSocketGateway({
+   namespace: '/online', // Different namespace
   cors: { origin: '*', credentials: true },
-  path: '/socket.io',
 })
 @Injectable()
 export class OnlineGateway implements OnGatewayConnection, OnGatewayDisconnect {

@@ -19,6 +19,7 @@ const health_controller_1 = require("./health/health.controller");
 const quiz_time_module_1 = require("./quiz-time/quiz-time.module");
 const player_module_1 = require("./player/player.module");
 const quiz_module_1 = require("./quiz/quiz.module");
+const websocket_module_1 = require("./websocket/websocket.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -44,6 +45,7 @@ exports.AppModule = AppModule = __decorate([
             webhook_module_1.WebhookModule,
             quiz_time_module_1.QuizTimeModule,
             player_module_1.PlayerModule,
+            websocket_module_1.WebSocketModule,
             quiz_module_1.QuizModule,
         ],
         providers: [],

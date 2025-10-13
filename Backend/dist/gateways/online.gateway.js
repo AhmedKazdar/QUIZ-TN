@@ -109,8 +109,8 @@ __decorate([
 ], OnlineGateway.prototype, "handleGetOnlineUsers", null);
 exports.OnlineGateway = OnlineGateway = __decorate([
     (0, websockets_1.WebSocketGateway)({
+        namespace: '/online',
         cors: { origin: '*', credentials: true },
-        path: '/socket.io',
     }),
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [player_service_1.PlayerService])

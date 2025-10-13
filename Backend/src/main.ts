@@ -1,19 +1,24 @@
+// main.ts
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import * as os from 'os';
+import { IoAdapter } from '@nestjs/platform-socket.io';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // ✅ Enable CORS for ALL origins
+  // Use IoAdapter for WebSockets
+  app.useWebSocketAdapter(new IoAdapter(app));
+
+  // Enable CORS for HTTP only (not WebSocket)
   app.enableCors({
-    origin: '*', // Allow any origin
+    origin: '*',
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
     exposedHeaders: ['Authorization', 'Content-Range', 'X-Content-Range'],
-    credentials: false, // must be false when origin = '*'
+    credentials: false,
     preflightContinue: false,
     optionsSuccessStatus: 204,
   });
