@@ -1,3 +1,4 @@
+// socket.service.ts - FIXED VERSION
 import { Injectable, OnDestroy } from '@angular/core';
 import { io, Socket } from 'socket.io-client';
 import { BehaviorSubject, Observable, Subject, Subscription } from 'rxjs';
@@ -9,6 +10,16 @@ export interface OnlineUser {
   userId: string;
   username: string;
   socketId: string;
+}
+
+export interface SoloAnswerValidationRequest {
+  userId: string;
+  quizId: string;
+  answers: Array<{
+    questionId: string;
+    selectedOption: number;
+  }>;
+  timeSpent: number;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -34,6 +45,21 @@ export class SocketService implements OnDestroy {
   private soloQuestionsErrorSubject = new Subject<any>();
   private questionsLoadedSubject = new Subject<any>();
   private consistentQuestionsLoadedSubject = new Subject<any>();
+
+  // Sequential Quiz Subjects
+  private sequentialQuizStartedSubject = new Subject<any>();
+  private sequentialQuizJoinedSubject = new Subject<any>();
+  private nextQuestionSubject = new Subject<any>();
+  private sequentialAnswerResultSubject = new Subject<any>();
+  private playerJoinedSequentialSubject = new Subject<any>();
+  private playerAnsweredSequentialSubject = new Subject<any>();
+  private sequentialQuizFinishedSubject = new Subject<any>();
+
+  // Solo Answer Validation Subject
+  private soloAnswerValidationSubject = new Subject<any>();
+
+  // Fastest winner subject
+  private fastestWinnerDeclaredSubject = new Subject<any>();
 
   // Synchronized Quiz Subjects
   private synchronizedQuizCreatedSubject = new Subject<any>();
@@ -95,10 +121,12 @@ export class SocketService implements OnDestroy {
 
     try {
       const token = this.authService.getToken();
+      const currentUser = this.authService.currentUserValue;
       
       console.log('[SocketService] 🔌 Attempting WebSocket connection', { 
         hasToken: !!token,
         tokenLength: token?.length || 0,
+        currentUser: currentUser,
         wsUrl: environment.wsUrl,
         timestamp: new Date().toISOString()
       });
@@ -108,14 +136,14 @@ export class SocketService implements OnDestroy {
         this.connectionTimeout = null;
       }
 
-      // Connect to the quiz namespace
       this.socket = io(`${environment.wsUrl}/quiz`, {
         transports: ['websocket', 'polling'],
         auth: {
-          token: token || ''
-        },
-        query: {
-          token: token || ''
+          token: token || '',
+          user: currentUser ? JSON.stringify({
+            userId: currentUser._id,
+            username: currentUser.username
+          }) : ''
         },
         autoConnect: true,
         reconnection: true,
@@ -126,7 +154,7 @@ export class SocketService implements OnDestroy {
       });
 
       this.setupListeners();
-      
+
       this.connectionTimeout = setTimeout(() => {
         if (!this.isConnected()) {
           console.error('[SocketService] ⏰ Connection timeout - server not responding after 8 seconds');
@@ -222,6 +250,64 @@ export class SocketService implements OnDestroy {
       this.authenticationRequiredSubject.next(data);
     });
 
+    // Sequential Quiz Events
+    this.socket.on('sequentialQuizStarted', (data: any) => {
+      console.log('[SocketService] 🎯 Sequential quiz started:', data.quizId);
+      this.sequentialQuizStartedSubject.next(data);
+    });
+
+    this.socket.on('sequentialQuizJoined', (data: any) => {
+      console.log('[SocketService] 🎯 Sequential quiz joined:', data.quizId);
+      this.sequentialQuizJoinedSubject.next(data);
+    });
+
+    this.socket.on('nextQuestion', (data: any) => {
+      console.log('[SocketService] ❓ Next question received:', data.questionIndex);
+      this.nextQuestionSubject.next(data);
+    });
+
+    this.socket.on('sequentialAnswerResult', (data: any) => {
+      console.log('[SocketService] ✅ Sequential answer result:', data.isCorrect);
+      this.sequentialAnswerResultSubject.next(data);
+    });
+
+    this.socket.on('playerJoinedSequential', (data: any) => {
+      console.log('[SocketService] 👤 Player joined sequential:', data.player.username);
+      this.playerJoinedSequentialSubject.next(data);
+    });
+
+    this.socket.on('playerAnsweredSequential', (data: any) => {
+      console.log('[SocketService] 📝 Player answered sequential:', data.player.username);
+      this.playerAnsweredSequentialSubject.next(data);
+    });
+
+    this.socket.on('sequentialQuizFinished', (data: any) => {
+      console.log('[SocketService] 🏁 Sequential quiz finished:', data.quizId);
+      this.sequentialQuizFinishedSubject.next(data);
+    });
+
+    // Solo Events
+    this.socket.on('soloQuestionsLoaded', (data: any) => {
+      console.log('[SocketService] 📚 Solo questions loaded:', data.questions?.length);
+      this.soloQuestionsLoadedSubject.next(data);
+    });
+
+    this.socket.on('soloQuestionsError', (data: any) => {
+      console.error('[SocketService] ❌ Solo questions error received:', data);
+      this.soloQuestionsErrorSubject.next(data);
+    });
+
+    this.socket.on('soloAnswerValidation', (data: any) => {
+      console.log('[SocketService] ✅ Solo answer validation received:', data);
+      this.soloAnswerValidationSubject.next(data);
+    });
+
+    // Fastest Winner Event
+    this.socket.on('fastestWinnerDeclared', (data: any) => {
+      console.log('[SocketService] 🏆 Fastest winner declared:', data);
+      this.fastestWinnerDeclaredSubject.next(data);
+    });
+
     // Online Users Listeners
     this.socket.on('onlineUsers', (data: any) => {
       console.log('[SocketService] 👥 Online users received:', data?.length || 0);
@@ -240,16 +326,6 @@ export class SocketService implements OnDestroy {
     });
 
     // Quiz Questions Events
-    this.socket.on('soloQuestionsLoaded', (data: any) => {
-      console.log('[SocketService] 📚 Solo questions loaded:', data.questions?.length);
-      this.soloQuestionsLoadedSubject.next(data);
-    });
-
-    this.socket.on('soloQuestionsError', (data: any) => {
-      console.error('[SocketService] ❌ Solo questions error received:', data);
-      this.soloQuestionsErrorSubject.next(data);
-    });
-
     this.socket.on('questionsLoaded', (data: any) => {
       console.log('[SocketService] 📚 Questions loaded for online mode:', data.questions?.length);
       this.questionsLoadedSubject.next(data);
@@ -345,28 +421,111 @@ export class SocketService implements OnDestroy {
     });
   }
 
-  // ========== QUIZ QUESTIONS EMIT METHODS ==========
+  // ========== SOLO METHODS ==========
 
-  emitGetSoloQuestions(count: number = 10): void {
-    if (!this.isConnected()) {
+  emitGetSoloQuestions(count: number): void {
+    if (!this.isConnected() || !this.socket) {
       console.error('[SocketService] ❌ Cannot get solo questions - not connected');
       return;
     }
-    console.log('[SocketService] 📚 Getting solo questions via WebSocket:', count);
-    this.socket?.emit('getSoloQuestions', {
-      count,
-      timestamp: Date.now(),
-      mode: 'solo',
+    
+    console.log(`[SocketService] 📤 Emitting getSoloQuestions for ${count} questions`);
+    this.socket.emit('getSoloQuestions', { count, mode: 'solo' });
+  }
+
+  emitSubmitSoloAnswer(quizId: string, questionIndex: number, answerIndex: number, timeSpent: number): void {
+    if (!this.isConnected() || !this.socket) {
+      console.error('[SocketService] ❌ Cannot submit solo answer - not connected');
+      return;
+    }
+    
+    console.log(`[SocketService] 📤 Emitting submitSoloAnswer:`, {
+      quizId, questionIndex, answerIndex, timeSpent
+    });
+    
+    this.socket.emit('submitSoloAnswer', {
+      quizId,
+      questionIndex,
+      answerIndex,
+      timeSpent
     });
   }
 
+  emitValidateSoloAnswers(data: SoloAnswerValidationRequest): void {
+    if (!this.isConnected() || !this.socket) {
+      console.error('[SocketService] ❌ Cannot validate solo answers - not connected');
+      return;
+    }
+    console.log('[SocketService] ✅ Submitting solo answers for validation:', data);
+    this.socket.emit('validateSoloAnswers', data);
+  }
+
+  // ========== SOLO OBSERVABLES ==========
+
+  onSoloQuestionsLoaded(): Observable<any> {
+    return this.soloQuestionsLoadedSubject.asObservable();
+  }
+
+  onSoloQuestionsError(): Observable<any> {
+    return this.soloQuestionsErrorSubject.asObservable();
+  }
+
+  onSoloAnswerValidation(): Observable<any> {
+    return this.soloAnswerValidationSubject.asObservable();
+  }
+
+  // ========== SEQUENTIAL QUIZ EMIT METHODS ==========
+
+  emitStartSequentialQuiz(quizId: string, questionCount: number): void {
+    if (!this.isConnected() || !this.socket) {
+      console.error('[SocketService] ❌ Cannot start sequential quiz - not connected');
+      return;
+    }
+    console.log('[SocketService] 🎯 Starting sequential quiz:', quizId, questionCount);
+    this.socket.emit('startSequentialQuiz', { quizId, questionCount });
+  }
+
+  emitJoinSequentialQuiz(quizId: string): void {
+    if (!this.isConnected() || !this.socket) {
+      console.error('[SocketService] ❌ Cannot join sequential quiz - not connected');
+      return;
+    }
+    console.log('[SocketService] 🎯 Joining sequential quiz:', quizId);
+    this.socket.emit('joinSequentialQuiz', { quizId });
+  }
+
+  emitRequestNextQuestion(quizId: string): void {
+    if (!this.isConnected() || !this.socket) {
+      console.error('[SocketService] ❌ Cannot request next question - not connected');
+      return;
+    }
+    console.log('[SocketService] ❓ Requesting next question for quiz:', quizId);
+    this.socket.emit('requestNextQuestion', { quizId });
+  }
+
+  emitSubmitSequentialAnswer(quizId: string, questionIndex: number, answerIndex: number, timeSpent: number): void {
+    if (!this.isConnected() || !this.socket) {
+      console.error('[SocketService] ❌ Cannot submit sequential answer - not connected');
+      return;
+    }
+    console.log('[SocketService] 📝 Submitting sequential answer:', { 
+      quizId, 
+      questionIndex, 
+      answerIndex, 
+      timeSpent: timeSpent.toFixed(2) + 's' 
+    });
+    this.socket.emit('submitSequentialAnswer', { quizId, questionIndex, answerIndex, timeSpent });
+  }
+
+  // ========== QUIZ QUESTIONS EMIT METHODS ==========
+
   emitRequestQuestions(payload: { quizId: string; count: number; mode?: string }): void {
-    if (!this.isConnected()) {
+    if (!this.isConnected() || !this.socket) {
       console.error('[SocketService] ❌ Cannot request questions - not connected');
       return;
     }
     console.log('[SocketService] 📚 Requesting questions for online mode:', payload);
-    this.socket?.emit('requestQuestions', {
+    this.socket.emit('requestQuestions', {
       ...payload,
       timestamp: Date.now(),
       mode: 'online',
@@ -374,12 +533,12 @@ export class SocketService implements OnDestroy {
   }
 
   emitRequestConsistentQuestions(payload: { quizId: string; count: number; seed: string }): void {
-    if (!this.isConnected()) {
+    if (!this.isConnected() || !this.socket) {
       console.error('[SocketService] ❌ Cannot request consistent questions - not connected');
       return;
     }
     console.log('[SocketService] 🔄 Requesting consistent questions with seed:', payload.seed);
-    this.socket?.emit('requestConsistentQuestions', {
+    this.socket.emit('requestConsistentQuestions', {
       ...payload,
       timestamp: Date.now(),
       mode: 'online',
@@ -389,30 +548,30 @@ export class SocketService implements OnDestroy {
   // ========== SYNCHRONIZED QUIZ EMIT METHODS ==========
 
   emitCreateSynchronizedQuiz(quizId: string, questionCount: number): void {
-    if (!this.isConnected()) {
+    if (!this.isConnected() || !this.socket) {
       console.error('[SocketService] ❌ Cannot create synchronized quiz - not connected');
       return;
     }
     console.log('[SocketService] 🔄 Creating synchronized quiz:', quizId, questionCount);
-    this.socket?.emit('createSynchronizedQuiz', { quizId, questionCount });
+    this.socket.emit('createSynchronizedQuiz', { quizId, questionCount });
   }
 
   emitJoinSynchronizedQuiz(quizId: string, userId: string): void {
-    if (!this.isConnected()) {
+    if (!this.isConnected() || !this.socket) {
       console.error('[SocketService] ❌ Cannot join synchronized quiz - not connected');
       return;
     }
     console.log('[SocketService] 🔄 Joining synchronized quiz:', quizId, userId);
-    this.socket?.emit('joinSynchronizedQuiz', { quizId, userId });
+    this.socket.emit('joinSynchronizedQuiz', { quizId, userId });
   }
 
   emitSubmitSynchronizedAnswer(quizId: string, questionIndex: number, answerIndex: number): void {
-    if (!this.isConnected()) {
+    if (!this.isConnected() || !this.socket) {
       console.error('[SocketService] ❌ Cannot submit synchronized answer - not connected');
       return;
     }
     console.log('[SocketService] 📝 Submitting synchronized answer:', { quizId, questionIndex, answerIndex });
-    this.socket?.emit('submitSynchronizedAnswer', { quizId, questionIndex, answerIndex });
+    this.socket.emit('submitSynchronizedAnswer', { quizId, questionIndex, answerIndex });
   }
 
   // ========== ANSWER SUBMISSION ==========
@@ -425,12 +584,12 @@ export class SocketService implements OnDestroy {
     quizId?: string, 
     questionIndex?: number
   ): void {
-    if (!this.isConnected()) {
+    if (!this.isConnected() || !this.socket) {
       console.error('[SocketService] ❌ Cannot submit answer - not connected');
       return;
     }
     console.log('[SocketService] 📝 Submitting answer:', { questionId, answerIndex, mode });
-    this.socket?.emit('submitAnswer', {
+    this.socket.emit('submitAnswer', {
       questionId,
       answerIndex,
       timeSpent,
@@ -443,77 +602,88 @@ export class SocketService implements OnDestroy {
   // ========== GAME EVENTS EMIT METHODS ==========
 
   emitRequestQuestion(payload: { quizId: string; questionIndex: number }): void {
-    if (!this.isConnected()) {
+    if (!this.isConnected() || !this.socket) {
       console.error('[SocketService] ❌ Cannot request question - not connected');
       return;
     }
     console.log('[SocketService] ❓ Requesting question:', payload);
-    this.socket?.emit('requestQuestion', { ...payload, timestamp: Date.now() });
+    this.socket.emit('requestQuestion', { ...payload, timestamp: Date.now() });
   }
 
   emitReadyForNextQuestion(payload: { quizId: string; userId: string; questionIndex: number }): void {
-    if (!this.isConnected()) {
+    if (!this.isConnected() || !this.socket) {
       console.error('[SocketService] ❌ Cannot emit ready for next question - not connected');
       return;
     }
     console.log('[SocketService] ✅ Ready for next question:', payload);
-    this.socket?.emit('readyForNextQuestion', { ...payload, timestamp: Date.now() });
+    this.socket.emit('readyForNextQuestion', { ...payload, timestamp: Date.now() });
   }
 
   emitPlayerAnswered(payload: { userId: string; questionIndex: number; isCorrect: boolean | null }): void {
-    if (!this.isConnected()) {
+    if (!this.isConnected() || !this.socket) {
       console.error('[SocketService] ❌ Cannot emit player answered - not connected');
       return;
     }
     console.log('[SocketService] 📝 Player answered:', payload);
-    this.socket?.emit('playerAnswered', payload);
+    this.socket.emit('playerAnswered', payload);
   }
 
   emitPlayerEliminated(payload: { userId: string; questionIndex: number; reason: string }): void {
-    if (!this.isConnected()) {
+    if (!this.isConnected() || !this.socket) {
       console.error('[SocketService] ❌ Cannot emit player eliminated - not connected');
       return;
     }
     console.log('[SocketService] ❌ Player eliminated:', payload);
-    this.socket?.emit('playerEliminated', payload);
+    this.socket.emit('playerEliminated', payload);
   }
 
   emitPlayerWin(payload: { userId: string; username: string; questionIndex: number }): void {
-    if (!this.isConnected()) {
+    if (!this.isConnected() || !this.socket) {
       console.error('[SocketService] ❌ Cannot emit player win - not connected');
       return;
     }
     console.log('[SocketService] 🎉 Player win:', payload);
-    this.socket?.emit('playerWin', payload);
+    this.socket.emit('playerWin', payload);
   }
 
   emitGameOver(payload: { winner: { userId: string; username: string } | null }): void {
-    if (!this.isConnected()) {
+    if (!this.isConnected() || !this.socket) {
       console.error('[SocketService] ❌ Cannot emit game over - not connected');
       return;
     }
     console.log('[SocketService] 🏁 Game over:', payload);
-    this.socket?.emit('gameOver', payload);
+    this.socket.emit('gameOver', payload);
   }
 
   emitDetermineWinner(payload: { quizId?: string; questionIndex: number }): void {
-    if (!this.isConnected()) {
+    if (!this.isConnected() || !this.socket) {
       console.error('[SocketService] ❌ Cannot determine winner - not connected');
       return;
     }
     console.log('[SocketService] 🏆 Determine winner:', payload);
-    this.socket?.emit('determineWinner', { ...(payload || {}), timestamp: Date.now() });
+    this.socket.emit('determineWinner', { ...(payload || {}), timestamp: Date.now() });
+  }
+
+  // ========== LEAVE QUIZ SESSION ==========
+
+  emitLeaveQuizSession(quizId: string): void {
+    if (!this.isConnected() || !this.socket) {
+      console.warn('[SocketService] ❌ Socket not connected, cannot emit leaveQuizSession');
+      return;
+    }
+    console.log(`🚪 [SocketService] Emitting leaveQuizSession for: ${quizId}`);
+    this.socket.emit('leaveQuizSession', { quizId });
   }
 
   // ========== DEBUG METHODS ==========
 
   emitDebugConnection(): void {
-    if (!this.isConnected()) {
+    if (!this.isConnected() || !this.socket) {
       console.error('[SocketService] ❌ Cannot debug connection - not connected');
       return;
     }
     console.log('[SocketService] 🔌 Debugging connection...');
-    this.socket?.emit('debug_connection');
+    this.socket.emit('debug_connection');
   }
 
   // ========== ERROR HANDLING METHODS ==========
@@ -577,6 +747,40 @@ export class SocketService implements OnDestroy {
 
   // ========== OBSERVABLES ==========
 
+  // Sequential Quiz Observables
+  onSequentialQuizStarted(): Observable<any> {
+    return this.sequentialQuizStartedSubject.asObservable();
+  }
+
+  onSequentialQuizJoined(): Observable<any> {
+    return this.sequentialQuizJoinedSubject.asObservable();
+  }
+
+  onNextQuestion(): Observable<any> {
+    return this.nextQuestionSubject.asObservable();
+  }
+
+  onSequentialAnswerResult(): Observable<any> {
+    return this.sequentialAnswerResultSubject.asObservable();
+  }
+
+  onPlayerJoinedSequential(): Observable<any> {
+    return this.playerJoinedSequentialSubject.asObservable();
+  }
+
+  onPlayerAnsweredSequential(): Observable<any> {
+    return this.playerAnsweredSequentialSubject.asObservable();
+  }
+
+  onSequentialQuizFinished(): Observable<any> {
+    return this.sequentialQuizFinishedSubject.asObservable();
+  }
+
+  // Fastest Winner Observable
+  onFastestWinnerDeclared(): Observable<any> {
+    return this.fastestWinnerDeclaredSubject.asObservable();
+  }
+
   // Authentication Observables
   onAuthenticationSuccess(): Observable<any> {
     return this.authenticationSuccessSubject.asObservable();
@@ -597,15 +801,6 @@ export class SocketService implements OnDestroy {
 
   onUserDisconnected(): Observable<string> {
     return this.userDisconnectedSubject.asObservable();
-  }
-
-  // Quiz Questions Observables
-  onSoloQuestionsLoaded(): Observable<{ questions: Question[]; totalQuestions: number; mode: string }> {
-    return this.soloQuestionsLoadedSubject.asObservable();
-  }
-
-  onSoloQuestionsError(): Observable<any> {
-    return this.soloQuestionsErrorSubject.asObservable();
   }
 
   onQuestionsLoaded(): Observable<any> {
@@ -682,12 +877,12 @@ export class SocketService implements OnDestroy {
 
   // Online Users Observables
   requestOnlineUsers(): void {
-    if (!this.isConnected()) {
+    if (!this.isConnected() || !this.socket) {
       console.warn('[SocketService] ❌ Cannot request online users - not connected');
       return;
     }
     console.log('[SocketService] 👥 Requesting online users');
-    this.socket?.emit('getOnlineUsers');
+    this.socket.emit('getOnlineUsers');
   }
 
   getOnlineUsers(): Observable<OnlineUser[]> {
@@ -716,6 +911,19 @@ export class SocketService implements OnDestroy {
     console.log('[SocketService] 🔄 Manual reconnection requested');
     this.reconnectAttempts = 0;
     this.connect();
+  }
+
+  onTimeExpired(): Observable<any> {
+    return new Observable(observer => {
+      if (!this.socket) {
+        console.error('[SocketService] ❌ Cannot listen to timeExpired - socket is null');
+        return;
+      }
+      
+      this.socket.on('timeExpired', (data: any) => {
+        observer.next(data);
+      });
+    });
   }
 
   // Connection health check

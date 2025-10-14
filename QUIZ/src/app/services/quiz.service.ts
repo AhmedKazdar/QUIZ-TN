@@ -1,3 +1,4 @@
+// quiz.service.ts
 import { Injectable } from '@angular/core';
 import { Observable, of, BehaviorSubject, Subscription, throwError } from 'rxjs';
 import { tap, timeout, catchError } from 'rxjs/operators';
@@ -7,11 +8,11 @@ import { filter, take } from 'rxjs/operators';
 export interface AnswerOption {
   id: string;
   text: string;
-  isCorrect: boolean;
+  isCorrect?: boolean; // Optional for online mode
 }
 
 export interface Question {
-  _id: string;
+  _id?: string;
   id: string;
   question: string;
   options: AnswerOption[];
@@ -33,6 +34,17 @@ export interface QuizResult {
 export interface GameWinner {
   userId: string;
   username: string;
+   timeSpent: number;
+}
+
+export interface SoloAnswerValidationRequest {
+  userId: string;
+  quizId: string;
+  answers: Array<{
+    questionId: string;
+    selectedOption: number;
+  }>;
+  timeSpent: number;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -50,6 +62,16 @@ export class QuizService {
   private onlineUsers$ = new BehaviorSubject<OnlineUser[]>([]);
   private connectionStatus$ = new BehaviorSubject<boolean>(false);
 
+  // Sequential quiz state
+  private sequentialQuizState = new BehaviorSubject<{
+    quizId: string;
+    currentQuestion: Question | null;
+    questionIndex: number;
+    totalQuestions: number;
+    players: OnlineUser[];
+    isHost: boolean;
+  } | null>(null);
+
   constructor(private socketService: SocketService) {
     this.setupSocketListeners();
   }
@@ -65,32 +87,233 @@ export class QuizService {
       this.onlineUsers$.next(users || []);
     });
 
-    // Listen for user connection events
-    const userConnectedSub = this.socketService.onUserConnected().subscribe((user: OnlineUser) => {
-      const currentUsers = this.onlineUsers$.value;
-      if (!currentUsers.find(u => u.userId === user.userId)) {
-        this.onlineUsers$.next([...currentUsers, user]);
+    // Sequential Quiz Listeners
+    const sequentialQuizStartedSub = this.socketService.onSequentialQuizStarted().subscribe((data: any) => {
+      this.sequentialQuizState.next({
+        quizId: data.quizId,
+        currentQuestion: null,
+        questionIndex: -1,
+        totalQuestions: data.totalQuestions,
+        players: [data.host],
+        isHost: true,
+      });
+    });
+
+    const sequentialQuizJoinedSub = this.socketService.onSequentialQuizJoined().subscribe((data: any) => {
+      this.sequentialQuizState.next({
+        quizId: data.quizId,
+        currentQuestion: null,
+        questionIndex: data.currentQuestionIndex,
+        totalQuestions: data.totalQuestions,
+        players: data.players,
+        isHost: false,
+      });
+    });
+
+    const nextQuestionSub = this.socketService.onNextQuestion().subscribe((data: any) => {
+      const currentState = this.sequentialQuizState.value;
+      if (currentState && currentState.quizId === data.quizId) {
+        this.sequentialQuizState.next({
+          ...currentState,
+          currentQuestion: data.question,
+          questionIndex: data.questionIndex,
+          totalQuestions: data.totalQuestions,
+        });
+      }
+    });
+    
+
+    const playerJoinedSequentialSub = this.socketService.onPlayerJoinedSequential().subscribe((data: any) => {
+      const currentState = this.sequentialQuizState.value;
+      if (currentState) {
+        this.sequentialQuizState.next({
+          ...currentState,
+          players: data.players,
+        });
       }
     });
 
-    // Listen for user disconnection events
-    const userDisconnectedSub = this.socketService.onUserDisconnected().subscribe((userId: string) => {
-      const currentUsers = this.onlineUsers$.value;
-      this.onlineUsers$.next(currentUsers.filter(user => user.userId !== userId));
+    // Fastest Winner Listener
+    const fastestWinnerSub = this.socketService.onFastestWinnerDeclared().subscribe((data: any) => {
+      console.log('🏆 Fastest winner event received in QuizService:', data);
+    });
+
+    // Sequential Answer Result Listener
+    const sequentialAnswerResultSub = this.socketService.onSequentialAnswerResult().subscribe((data: any) => {
+      console.log('✅ Sequential answer result received:', data);
+    });
+
+    // Solo Answer Validation Result Listener - REMOVED component logic
+    const soloAnswerValidationSub = this.socketService.onSoloAnswerValidation().subscribe((data: any) => {
+      console.log('✅ Solo answer validation result received in QuizService:', data);
+      // Just log the result - component will handle the actual logic
     });
 
     this.socketSubscriptions.add(connectionSub);
     this.socketSubscriptions.add(usersSub);
-    this.socketSubscriptions.add(userConnectedSub);
-    this.socketSubscriptions.add(userDisconnectedSub);
+    this.socketSubscriptions.add(sequentialQuizStartedSub);
+    this.socketSubscriptions.add(sequentialQuizJoinedSub);
+    this.socketSubscriptions.add(nextQuestionSub);
+    this.socketSubscriptions.add(playerJoinedSequentialSub);
+    this.socketSubscriptions.add(fastestWinnerSub);
+    this.socketSubscriptions.add(sequentialAnswerResultSub);
+    this.socketSubscriptions.add(soloAnswerValidationSub);
   }
+
+  // ========== SOLO ANSWER VALIDATION METHODS ==========
+
+  /**
+   * Submit solo answers to server for validation (for cheat prevention)
+   */
+  validateSoloAnswers(data: SoloAnswerValidationRequest): Observable<QuizResult> {
+    return new Observable((observer) => {
+      console.log('🎯 Submitting solo answers for validation:', data);
+
+      // Emit the validation request to the server
+      this.socketService.emitValidateSoloAnswers(data);
+
+      // Listen for the validation result
+      const validationSub = this.socketService.onSoloAnswerValidation()
+        .pipe(
+          timeout(10000),
+          catchError((error: any) => {
+            console.error('❌ Timeout waiting for solo answer validation:', error);
+            return throwError(() => new Error('Answer validation timed out'));
+          })
+        )
+        .subscribe({
+          next: (validationData: any) => {
+            console.log('✅ Received solo answer validation result:', validationData);
+            
+            if (validationData && validationData.validated) {
+              const result: QuizResult = {
+                _id: validationData._id || `solo-result-${Date.now()}`,
+                userId: data.userId,
+                score: validationData.score || 0,
+                correctAnswers: validationData.correctAnswers || 0,
+                totalQuestions: validationData.totalQuestions || data.answers.length,
+                timeSpent: data.timeSpent,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              };
+              observer.next(result);
+              observer.complete();
+            } else {
+              observer.error(new Error('Invalid validation response from server'));
+            }
+          },
+          error: (error: any) => {
+            console.error('❌ Error in solo answer validation:', error);
+            observer.error(error);
+          }
+        });
+
+      this.socketSubscriptions.add(validationSub);
+    });
+  }
+
+leaveQuizSession(quizId: string): Observable<any> {
+  return new Observable(observer => {
+    if (!this.socketService.isConnected()) {
+      console.warn('❌ [QuizService] Socket not connected for leaveQuizSession');
+      observer.next({ success: false, message: 'Socket not connected' });
+      observer.complete();
+      return;
+    }
+
+    console.log(`🚪 [QuizService] Leaving quiz session: ${quizId}`);
+    
+    // Emit the leave event to the backend
+    this.socketService.emitLeaveQuizSession(quizId);
+    
+    // Clean up frontend state
+    this.sequentialQuizState.next(null);
+    
+    // Return success immediately since we don't need to wait for backend response
+    observer.next({ 
+      success: true, 
+      message: 'Successfully left quiz session',
+      quizId: quizId
+    });
+    observer.complete();
+  });
+}
+
+  onFastestWinnerDeclared(): Observable<any> {
+    return this.socketService.onFastestWinnerDeclared();
+  }
+
+  // ========== SEQUENTIAL QUIZ METHODS ==========
+
+  startSequentialQuiz(quizId: string, questionCount: number): void {
+    this.socketService.emitStartSequentialQuiz(quizId, questionCount);
+  }
+
+  joinSequentialQuiz(quizId: string): void {
+    this.socketService.emitJoinSequentialQuiz(quizId);
+  }
+
+  requestNextQuestion(quizId: string): void {
+    this.socketService.emitRequestNextQuestion(quizId);
+  }
+
+  submitSequentialAnswer(quizId: string, questionIndex: number, answerIndex: number, timeSpent: number): void {
+    this.socketService.emitSubmitSequentialAnswer(quizId, questionIndex, answerIndex, timeSpent);
+  }
+
+  getSequentialQuizState(): Observable<any> {
+    return this.sequentialQuizState.asObservable();
+  }
+
+  // ========== SEQUENTIAL QUIZ OBSERVABLES ==========
+
+  onSequentialQuizStarted(): Observable<any> {
+    return this.socketService.onSequentialQuizStarted();
+  }
+
+  onSoloQuestionsLoaded(): Observable<any> {
+  return this.socketService.onSoloQuestionsLoaded();
+}
+
+onSoloQuestionsError(): Observable<any> {
+  return this.socketService.onSoloQuestionsError();
+}
+
+onSoloAnswerValidation(): Observable<any> {
+  return this.socketService.onSoloAnswerValidation();
+}
+
+  onSequentialQuizJoined(): Observable<any> {
+    return this.socketService.onSequentialQuizJoined();
+  }
+
+  onNextQuestion(): Observable<any> {
+    return this.socketService.onNextQuestion();
+  }
+
+  onSequentialAnswerResult(): Observable<any> {
+    return this.socketService.onSequentialAnswerResult();
+  }
+
+  onPlayerJoinedSequential(): Observable<any> {
+    return this.socketService.onPlayerJoinedSequential();
+  }
+
+  onPlayerAnsweredSequential(): Observable<any> {
+    return this.socketService.onPlayerAnsweredSequential();
+  }
+
+  onSequentialQuizFinished(): Observable<any> {
+    return this.socketService.onSequentialQuizFinished();
+  }
+
+  // ========== EXISTING METHODS (Keep for backward compatibility) ==========
 
   getMockQuestions(count = 10): Observable<Question[]> {
     console.log('🎯 Using mock questions as fallback');
     
     const mockQuestions: Question[] = [
       {
-        _id: '1',
         id: '1',
         question: 'What is the capital of France?',
         options: [
@@ -101,36 +324,9 @@ export class QuizService {
         ],
         category: 'Geography',
         difficulty: 'easy'
-      },
-      {
-        _id: '2',
-        id: '2',
-        question: 'Which planet is known as the Red Planet?',
-        options: [
-          { id: '1', text: 'Earth', isCorrect: false },
-          { id: '2', text: 'Mars', isCorrect: true },
-          { id: '3', text: 'Jupiter', isCorrect: false },
-          { id: '4', text: 'Venus', isCorrect: false }
-        ],
-        category: 'Science',
-        difficulty: 'easy'
-      },
-      {
-        _id: '3',
-        id: '3',
-        question: 'What is 2 + 2?',
-        options: [
-          { id: '1', text: '3', isCorrect: false },
-          { id: '2', text: '4', isCorrect: true },
-          { id: '3', text: '5', isCorrect: false },
-          { id: '4', text: '6', isCorrect: false }
-        ],
-        category: 'Math',
-        difficulty: 'easy'
       }
     ];
   
-    // Return requested number of questions
     const questionsToReturn = mockQuestions.slice(0, count);
     return of(questionsToReturn);
   }
@@ -155,30 +351,86 @@ export class QuizService {
     return this.socketService.onQuestionsLoaded();
   }
 
-  // WebSocket method for solo questions
-  getSoloQuestions(count: number): Observable<Question[]> {
-    return new Observable((observer) => {
-      this.waitForSocketReady().pipe(
-        timeout(20000),
-        catchError((error: any) => {
-          console.error('❌ Timeout waiting for solo questions:', error);
-          return throwError(() => new Error('Questions request timed out. Please try again.'));
-        })
-      ).subscribe({
-        next: (ready) => {
-          if (ready) {
-            console.log(`🎯 WebSocket ready, requesting ${count} solo questions`);
-            this.requestSoloQuestions(count, observer);
-          } else {
-            observer.error(new Error('WebSocket connection failed'));
-          }
-        },
-        error: (error) => {
-          observer.error(error);
+  private requestSoloQuestionsViaSocket(count: number, observer: any): void {
+  console.log(`🎯 [Solo] Emitting getSoloQuestions for ${count} questions`);
+  
+  this.socketService.emitGetSoloQuestions(count);
+  
+  const questionsSub = this.socketService.onSoloQuestionsLoaded()
+    .pipe(
+      timeout(15000),
+      catchError((error: any) => {
+        console.error('❌ Timeout waiting for solo questions:', error);
+        return throwError(() => new Error('Solo questions request timed out'));
+      })
+    )
+    .subscribe({
+      next: (data: any) => {
+        console.log('✅ Received soloQuestionsLoaded event:', data);
+        if (data?.questions?.length > 0) {
+          // Questions are already sanitized (no isCorrect) from backend
+          this.currentQuiz = data.questions;
+          this.currentAnswers = new Array(data.questions.length).fill(-1);
+          observer.next(data.questions);
+          observer.complete();
+        } else {
+          console.warn('❌ No questions received in solo response');
+          observer.error(new Error('No questions received from server for solo mode'));
         }
-      });
+      },
+      error: (error: any) => {
+        console.error('❌ Error in soloQuestionsLoaded subscription:', error);
+        observer.error(error);
+      }
     });
-  }
+
+  const errorSub = this.socketService.onSoloQuestionsError()
+    .subscribe((error: any) => {
+      console.error('❌ Received soloQuestionsError event:', error);
+      observer.error(new Error(error?.message || 'Failed to load solo questions via WebSocket'));
+    });
+
+  this.socketSubscriptions.add(questionsSub);
+  this.socketSubscriptions.add(errorSub);
+}
+
+submitSoloAnswer(quizId: string, questionIndex: number, answerIndex: number, timeSpent: number): void {
+  console.log(`🎯 [Solo] Submitting answer via WebSocket:`, {
+    quizId,
+    questionIndex,
+    answerIndex,
+    timeSpent
+  });
+  
+  this.socketService.emitSubmitSoloAnswer(quizId, questionIndex, answerIndex, timeSpent);
+}
+
+getSoloQuestions(count: number): Observable<Question[]> {
+  return new Observable((observer) => {
+    console.log(`🎯 [Solo] Requesting ${count} questions via WebSocket`);
+    
+    this.waitForSocketReady().pipe(
+      timeout(10000),
+      catchError((error: any) => {
+        console.error('❌ Timeout waiting for socket for solo questions:', error);
+        return throwError(() => new Error('WebSocket connection timeout for solo mode'));
+      })
+    ).subscribe({
+      next: (ready) => {
+        if (ready) {
+          console.log(`🎯 WebSocket ready, requesting ${count} solo questions`);
+          this.requestSoloQuestionsViaSocket(count, observer);
+        } else {
+          observer.error(new Error('WebSocket not available for solo mode'));
+        }
+      },
+      error: (error) => {
+        observer.error(error);
+      }
+    });
+  });
+}
+
 
   private waitForSocketReady(): Observable<boolean> {
     return new Observable((observer) => {
@@ -235,10 +487,8 @@ export class QuizService {
   private requestSoloQuestions(count: number, observer: any): void {
     console.log(`🎯 Requesting ${count} solo questions`);
     
-    // Use the correct method for solo questions
     this.socketService.emitGetSoloQuestions(count);
     
-    // Set up question subscription with timeout
     const questionsSub = this.socketService.onSoloQuestionsLoaded()
       .pipe(
         timeout(15000),
@@ -276,7 +526,6 @@ export class QuizService {
     this.socketSubscriptions.add(errorSub);
   }
 
-  // WebSocket method for online questions
   getOnlineQuestions(count = 10): Observable<Question[]> {
     return new Observable((observer) => {
       if (!this.socketService.isConnected()) {
@@ -304,7 +553,6 @@ export class QuizService {
 
       this.socketSubscriptions.add(questionsSub);
 
-      // Emit the request
       this.socketService.emitRequestQuestions({
         quizId: 'online-quiz-' + Date.now(),
         count: count
@@ -337,7 +585,6 @@ export class QuizService {
     return this.socketService.onPlayerJoined();
   }
 
-  // Answer submission for synchronized quizzes
   submitSynchronizedAnswer(quizId: string, questionIndex: number, answerIndex: number): void {
     this.socketService.emitSubmitSynchronizedAnswer(quizId, questionIndex, answerIndex);
   }
@@ -553,6 +800,7 @@ export class QuizService {
     this.quizStartTime = 0;
     this.quizMode = 'practice';
     this.quizResult$.next(null);
+    this.sequentialQuizState.next(null);
     this.socketSubscriptions.unsubscribe();
     this.socketSubscriptions = new Subscription();
     this.setupSocketListeners();

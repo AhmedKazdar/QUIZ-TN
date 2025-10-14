@@ -18,19 +18,34 @@ interface OnlineUser {
   socketId: string;
 }
 
-interface QuizSession {
+interface AuthenticatedUser {
+  userId: string;
+  username: string;
+}
+
+interface SoloQuizSession {
+  userId: string;
+  questions: any[];
+  startTime: number;
+}
+
+
+interface SequentialQuizSession {
   quizId: string;
-  hostId: string;
   players: Map<string, OnlineUser>;
   questions: any[];
+  originalQuestions: any[];
   currentQuestionIndex: number;
   started: boolean;
   finished: boolean;
-  seed?: string;
+  currentQuestionStartTime: number;
+  questionTimer?: NodeJS.Timeout;
+  answeredPlayers: Set<string>;
+  autoAdvanceTimer?: NodeJS.Timeout;
 }
 
 @WebSocketGateway({
-   namespace: '/quiz',
+  namespace: '/quiz',
 })
 export class QuizGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
@@ -38,296 +53,243 @@ export class QuizGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private readonly logger = new Logger(QuizGateway.name);
   private onlineUsers: Map<string, OnlineUser> = new Map();
-  private quizSessions: Map<string, QuizSession> = new Map();
+  private sequentialQuizSessions: Map<string, SequentialQuizSession> = new Map();
+  private fastestAnswerWinners: Map<string, { userId: string; username: string; timeSpent: number }> = new Map();
+  private soloQuizSessions: Map<string, SoloQuizSession> = new Map();
 
   constructor(private readonly quizService: QuizService) {}
 
-  async handleConnection(client: Socket) {
-    try {
-      this.logger.log(`Client connected: ${client.id}`);
+async handleConnection(client: Socket) {
+  try {
+    this.logger.log(`Client connected: ${client.id}`);
+    console.log(`🔗 New connection: ${client.id}, total sockets: ${this.server.sockets.sockets?.size || 0}`);
+    
+    // Debug: Log the entire handshake to see what's being sent
+    console.log('🔍 [BACKEND] Handshake auth:', client.handshake.auth);
 
-      // Authenticate connection
-      const token = client.handshake.auth.token || client.handshake.query.token;
-      
-      if (!token) {
-        this.logger.warn(`No token provided for client: ${client.id}`);
-        client.emit('authentication_required', { message: 'Authentication required' });
-        return;
+    const token = client.handshake.auth.token;
+    const userDataString = client.handshake.auth.user;
+    
+    // Use proper typing with union type
+    let user: AuthenticatedUser | null = null;
+
+    // Try JWT token first
+    if (token) {
+      user = await this.authenticateUser(token);
+    }
+    
+    // If JWT fails, try the user data from handshake
+    if (!user && userDataString) {
+      try {
+        const userData = JSON.parse(userDataString);
+        if (userData.username) {
+          console.log('✅ [BACKEND] Using user data from handshake:', userData.username);
+          user = {
+            userId: userData.userId || `user-${Date.now()}`,
+            username: userData.username,
+          };
+        }
+      } catch (parseError) {
+        console.error('❌ [BACKEND] Failed to parse user data from handshake:', parseError);
       }
-
-      // Here you would validate the JWT token and extract user info
-      const user = await this.authenticateUser(token);
-      
-      if (!user) {
-        this.logger.error(`Authentication failed for client: ${client.id}`);
-        client.emit('authentication_error', { message: 'Authentication failed' });
-        client.disconnect();
-        return;
-      }
-
-      // Store user info
-      const onlineUser: OnlineUser = {
-        userId: user.userId,
-        username: user.username,
-        socketId: client.id,
-      };
-
-      this.onlineUsers.set(client.id, onlineUser);
-      
-      // Notify client of successful authentication
-      client.emit('authentication_success', {
-        message: 'Authenticated successfully',
-        user: { userId: user.userId, username: user.username }
-      });
-
-      // Broadcast updated online users list
-      this.broadcastOnlineUsers();
-
-      this.logger.log(`User ${user.username} connected with socket ID: ${client.id}`);
-
-    } catch (error) {
-      this.logger.error(`Connection error for client ${client.id}:`, error);
+    }
+    
+    if (!user) {
+      this.logger.error(`Authentication failed for client: ${client.id}`);
       client.emit('authentication_error', { message: 'Authentication failed' });
       client.disconnect();
+      return;
     }
-  }
 
-  handleDisconnect(client: Socket) {
-    this.logger.log(`Client disconnected: ${client.id}`);
+    const onlineUser: OnlineUser = {
+      userId: user.userId,
+      username: user.username,
+      socketId: client.id,
+    };
+
+    this.onlineUsers.set(client.id, onlineUser);
     
-    const user = this.onlineUsers.get(client.id);
-    if (user) {
-      this.onlineUsers.delete(client.id);
-      this.broadcastOnlineUsers();
-      this.logger.log(`User ${user.username} disconnected`);
-    }
+    // Handle reconnection for existing sessions
+    this.handleUserReconnection(client.id, user.userId);
+    
+    client.emit('authentication_success', {
+      message: 'Authenticated successfully',
+      user: { userId: user.userId, username: user.username }
+    });
 
-    // Clean up any quiz sessions hosted by this user
-    this.cleanupUserSessions(client.id);
+    this.broadcastOnlineUsers();
+    this.logger.log(`User ${user.username} connected with socket ID: ${client.id}`);
+
+  } catch (error) {
+    this.logger.error(`Connection error for client ${client.id}:`, error);
+    client.emit('authentication_error', { message: 'Authentication failed' });
+    client.disconnect();
   }
+}
 
-  // ========== QUIZ QUESTIONS HANDLERS ==========
-
-  @SubscribeMessage('getSoloQuestions')
-  async handleGetSoloQuestions(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: { count: number; mode?: string }
-  ) {
-    try {
-      this.logger.log(`Getting solo questions for client: ${client.id}, count: ${data.count}`);
-
-      const user = this.onlineUsers.get(client.id);
-      if (!user) {
-        client.emit('soloQuestionsError', { message: 'User not authenticated' });
-        return;
-      }
-
-      // Get random questions from database
-      const questions = await this.quizService.getRandomQuestions(data.count || 10);
+handleDisconnect(client: Socket) {
+  console.log(`🔌 Client disconnected: ${client.id}, reason: ${client.disconnected}`);
+  this.logger.log(`Client disconnected: ${client.id}`);
+  const user = this.onlineUsers.get(client.id);
+  if (user) {
+    // Clean up solo session
+    this.soloQuizSessions.delete(user.userId);
+    this.onlineUsers.delete(client.id);
+    this.broadcastOnlineUsers();
+    this.logger.log(`User ${user.username} disconnected`);
+  }
+  this.cleanupUserSessions(client.id);
+}
+  private handleUserReconnection(socketId: string, userId: string): void {
+    // Update user sessions with new socket ID
+    for (const [quizId, session] of this.sequentialQuizSessions.entries()) {
+      // Find if this user was in the session with old socket ID
+      const existingPlayer = Array.from(session.players.entries()).find(
+        ([_, player]) => player.userId === userId
+      );
       
-      this.logger.log(`Retrieved ${questions.length} questions from database`);
-
-      if (questions.length === 0) {
-        client.emit('soloQuestionsError', { 
-          message: 'No questions available in database' 
-        });
-        return;
+      if (existingPlayer) {
+        const [oldSocketId, player] = existingPlayer;
+        
+        if (oldSocketId !== socketId) {
+          console.log(`🔄 User ${player.username} reconnected with new socket: ${socketId}`);
+          
+          // Update players map
+          session.players.delete(oldSocketId);
+          session.players.set(socketId, { ...player, socketId });
+          
+          // Update answered players
+          if (session.answeredPlayers.has(oldSocketId)) {
+            session.answeredPlayers.delete(oldSocketId);
+            session.answeredPlayers.add(socketId);
+          }
+        }
       }
-
-      // Transform questions to match frontend format with generated option IDs
-      const transformedQuestions = questions.map((q, index) => ({
-        _id: q._id.toString(),
-        id: q._id.toString(),
-        question: q.question,
-        options: Array.isArray(q.options) 
-          ? q.options.map((opt, optIndex) => ({
-              id: opt._id?.toString() || `opt-${index}-${optIndex}`, // Generate ID if not exists
-              text: opt.text,
-              isCorrect: opt.isCorrect,
-            }))
-          : [],
-        category: q.category || 'General',
-        difficulty: q.difficulty || 'Medium',
-      }));
-
-      client.emit('soloQuestionsLoaded', {
-        questions: transformedQuestions,
-        totalQuestions: transformedQuestions.length,
-        mode: data.mode || 'solo',
-        timestamp: Date.now(),
-      });
-
-      this.logger.log(`Sent ${transformedQuestions.length} solo questions to client: ${client.id}`);
-
-    } catch (error) {
-      this.logger.error('Error getting solo questions:', error);
-      client.emit('soloQuestionsError', { 
-        message: 'Failed to load questions',
-        error: error.message 
-      });
     }
   }
 
-  @SubscribeMessage('requestQuestions')
-  async handleRequestQuestions(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: { quizId: string; count: number; mode?: string }
-  ) {
-    try {
-      this.logger.log(`Requesting questions for online quiz: ${data.quizId}, count: ${data.count}`);
+  // ========== SEQUENTIAL ONLINE QUIZ HANDLERS ==========
 
-      const user = this.onlineUsers.get(client.id);
-      if (!user) {
-        client.emit('questionsError', { message: 'User not authenticated' });
-        return;
-      }
-
-      const questions = await this.quizService.getRandomQuestions(data.count || 10);
-      
-      const transformedQuestions = questions.map((q, index) => ({
-        _id: q._id.toString(),
-        id: q._id.toString(),
-        question: q.question,
-        options: Array.isArray(q.options) 
-          ? q.options.map((opt, optIndex) => ({
-              id: opt._id?.toString() || `opt-${index}-${optIndex}`, // Generate ID if not exists
-              text: opt.text,
-              isCorrect: opt.isCorrect,
-            }))
-          : [],
-        category: q.category || 'General',
-        difficulty: q.difficulty || 'Medium',
-      }));
-
-      client.emit('questionsLoaded', {
-        questions: transformedQuestions,
-        totalQuestions: transformedQuestions.length,
-        mode: data.mode || 'online',
-        quizId: data.quizId,
-        timestamp: Date.now(),
-      });
-
-      this.logger.log(`Sent ${transformedQuestions.length} online questions for quiz: ${data.quizId}`);
-
-    } catch (error) {
-      this.logger.error('Error requesting questions:', error);
-      client.emit('questionsError', { 
-        message: 'Failed to load questions',
-        error: error.message 
-      });
+  private startQuestionTimer(quizId: string, duration: number): void {
+    const quizSession = this.sequentialQuizSessions.get(quizId);
+    
+    if (!quizSession) {
+      console.error(`❌ Cannot start timer: Quiz session not found for ${quizId}`);
+      return;
     }
+
+    console.log(`⏰ Starting ${duration}s timer for quiz ${quizId}, question ${quizSession.currentQuestionIndex}`);
+
+    // Clear any existing timer
+    if (quizSession.questionTimer) {
+      clearTimeout(quizSession.questionTimer);
+      quizSession.questionTimer = undefined;
+    }
+
+    // Set new timer
+    quizSession.questionTimer = setTimeout(() => {
+      this.handleQuestionTimerExpired(quizId);
+    }, duration * 1000);
   }
 
-  @SubscribeMessage('submitAnswer')
-  async handleSubmitAnswer(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: { 
-      questionId: string; 
-      answerIndex: number; // This is the index of the selected option
-      timeSpent: number;
-      mode: 'solo' | 'online';
-      quizId?: string;
-      questionIndex?: number;
+  private handleQuestionTimerExpired(quizId: string): void {
+    const quizSession = this.sequentialQuizSessions.get(quizId);
+    
+    if (!quizSession || quizSession.finished) {
+      console.warn(`❌ Quiz session not found or already finished for quiz: ${quizId}`);
+      return;
     }
-  ) {
-    try {
-      const user = this.onlineUsers.get(client.id);
-      if (!user) {
-        client.emit('error', { message: 'User not authenticated' });
-        return;
-      }
 
-      // Get the question to check answer
-      const question = await this.quizService.findById(data.questionId);
-      
-      // Find the selected option by index
-      const selectedOption = question.options[data.answerIndex];
-      const isCorrect = selectedOption?.isCorrect || false;
+    console.log(`⏰ Timer expired for quiz ${quizId}, question ${quizSession.currentQuestionIndex}`);
+    
+    const isFinalQuestion = quizSession.currentQuestionIndex === quizSession.questions.length - 1;
 
-      // For the DTO, we need to convert index to a string ID
-      // Since your DTO expects selectedOptionId as string, we'll generate one
-      const selectedOptionId = `opt-${data.answerIndex}`;
+    // Notify all players that time is up
+    this.server.to(quizId).emit('timeExpired', {
+      quizId: quizId,
+      questionIndex: quizSession.currentQuestionIndex,
+      isFinalQuestion: isFinalQuestion
+    });
 
-      // Update question statistics using the DTO format
-      await this.quizService.submitResponse({
-        questionId: data.questionId,
-        selectedOptionId: selectedOptionId,
-        timeSpent: data.timeSpent,
-        isCorrect: isCorrect,
-      }, user.userId);
-
-      // Send result back to client
-      client.emit('answerResult', {
-        questionId: data.questionId,
-        isCorrect,
-        correctAnswer: question.options.find(opt => opt.isCorrect)?.text, // Send text instead of ID
-        timeSpent: data.timeSpent,
-      });
-
-      // For online mode, broadcast to other players
-      if (data.mode === 'online' && data.quizId) {
-        this.server.to(data.quizId).emit('playerAnswered', {
-          userId: user.userId,
-          username: user.username,
-          questionIndex: data.questionIndex,
-          isCorrect,
-        });
-      }
-
-    } catch (error) {
-      this.logger.error('Error submitting answer:', error);
-      client.emit('error', { 
-        message: 'Failed to submit answer',
-        error: error.message 
-      });
-    }
+    // Auto-advance after 3 seconds
+    console.log(`⏩ Auto-advancing to next question for quiz ${quizId} in 3 seconds`);
+    
+    setTimeout(() => {
+      this.autoAdvanceToNextQuestion(quizId);
+    }, 3000);
   }
 
-  @SubscribeMessage('submitSynchronizedAnswer')
-  async handleSubmitSynchronizedAnswer(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: { quizId: string; questionIndex: number; answerIndex: number }
-  ) {
-    try {
-      const user = this.onlineUsers.get(client.id);
-      const quizSession = this.quizSessions.get(data.quizId);
-
-      if (!quizSession || !user) {
-        client.emit('error', { message: 'Invalid quiz or user' });
-        return;
-      }
-
-      const currentQuestion = quizSession.questions[data.questionIndex];
-      const isCorrect = currentQuestion.options[data.answerIndex]?.isCorrect;
-
-      // Notify all players about the answer
-      this.server.to(data.quizId).emit('playerAnsweredSynchronized', {
-        player: user,
-        questionIndex: data.questionIndex,
-        answerIndex: data.answerIndex,
-        isCorrect,
-      });
-
-      // Notify the answering client
-      client.emit('synchronizedAnswerResult', {
-        questionIndex: data.questionIndex,
-        isCorrect,
-        correctAnswer: currentQuestion.options.find(opt => opt.isCorrect)?.text, // Send text
-      });
-
-    } catch (error) {
-      this.logger.error('Error submitting synchronized answer:', error);
-      client.emit('error', { 
-        message: 'Failed to submit answer',
-        error: error.message 
-      });
+  private autoAdvanceToNextQuestion(quizId: string): void {
+    console.log(`🔄 Auto-advance triggered for quiz: ${quizId}`);
+    
+    const quizSession = this.sequentialQuizSessions.get(quizId);
+    if (!quizSession || quizSession.finished) {
+      console.warn(`❌ Quiz session no longer exists or finished: ${quizId}`);
+      return;
     }
+
+    // Move to next question
+    quizSession.currentQuestionIndex++;
+    
+    if (quizSession.currentQuestionIndex >= quizSession.questions.length) {
+      console.log(`🏁 Quiz finished via auto-advance: ${quizId}`);
+      this.endQuiz(quizId);
+      return;
+    }
+
+    quizSession.currentQuestionStartTime = Date.now();
+    const currentQuestion = quizSession.questions[quizSession.currentQuestionIndex];
+
+    // Reset answered players for the new question
+    quizSession.answeredPlayers.clear();
+
+    // Send next question to all players
+    this.server.to(quizId).emit('nextQuestion', {
+      quizId: quizId,
+      question: currentQuestion,
+      questionIndex: quizSession.currentQuestionIndex,
+      totalQuestions: quizSession.questions.length,
+      startTime: quizSession.currentQuestionStartTime,
+    });
+
+    // Start the timer for this question
+    this.startQuestionTimer(quizId, 15);
+    
+    console.log(`✅ Auto-advanced to question ${quizSession.currentQuestionIndex + 1} for quiz: ${quizId}`);
   }
 
-  // ========== SYNCHRONIZED QUIZ HANDLERS ==========
+  private endQuiz(quizId: string): void {
+    const quizSession = this.sequentialQuizSessions.get(quizId);
+    if (!quizSession) return;
 
-  @SubscribeMessage('createSynchronizedQuiz')
-  async handleCreateSynchronizedQuiz(
+    quizSession.finished = true;
+    
+    console.log(`🏁 Quiz ${quizId} finished, cleaning up session`);
+
+    this.server.to(quizId).emit('sequentialQuizFinished', {
+      quizId: quizId,
+      totalQuestions: quizSession.questions.length,
+    });
+
+    // Clean up timers
+    if (quizSession.questionTimer) {
+      clearTimeout(quizSession.questionTimer);
+    }
+    if (quizSession.autoAdvanceTimer) {
+      clearTimeout(quizSession.autoAdvanceTimer);
+    }
+
+    // Remove session after a delay to allow final operations
+    setTimeout(() => {
+      if (this.sequentialQuizSessions.has(quizId)) {
+        this.sequentialQuizSessions.delete(quizId);
+        console.log(`🧹 Cleaned up quiz session: ${quizId}`);
+      }
+    }, 10000);
+  }
+
+  @SubscribeMessage('startSequentialQuiz')
+  async handleStartSequentialQuiz(
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { quizId: string; questionCount: number }
   ) {
@@ -338,51 +300,55 @@ export class QuizGateway implements OnGatewayConnection, OnGatewayDisconnect {
         return;
       }
 
-      this.logger.log(`Creating synchronized quiz: ${data.quizId} by user: ${user.username}`);
+      console.log(`🎯 Creating sequential quiz session: ${data.quizId}`);
 
-      // Check if quiz already exists
-      if (this.quizSessions.has(data.quizId)) {
-        client.emit('error', { message: 'Quiz ID already exists' });
-        return;
-      }
+      const originalQuestions = await this.quizService.getRandomQuestions(data.questionCount || 10);
+      const transformedQuestions = this.transformQuestionsForOnline(originalQuestions);
 
-      // Create new quiz session
-      const quizSession: QuizSession = {
+      const quizSession: SequentialQuizSession = {
         quizId: data.quizId,
-        hostId: client.id,
-        players: new Map(),
-        questions: [],
+        players: new Map([[client.id, user]]),
+        questions: transformedQuestions,
+        originalQuestions: originalQuestions,
         currentQuestionIndex: -1,
         started: false,
         finished: false,
+        currentQuestionStartTime: 0,
+        answeredPlayers: new Set(),
       };
 
-      this.quizSessions.set(data.quizId, quizSession);
+      this.sequentialQuizSessions.set(data.quizId, quizSession);
+      
+      const storedSession = this.sequentialQuizSessions.get(data.quizId);
+      console.log(`✅ Session stored: ${!!storedSession}`);
 
-      // Add host as first player
-      quizSession.players.set(client.id, user);
+      client.join(data.quizId);
 
-      client.emit('synchronizedQuizCreated', {
+      client.emit('sequentialQuizStarted', {
         quizId: data.quizId,
-        host: user,
-        message: 'Quiz created successfully',
+        totalQuestions: transformedQuestions.length,
       });
 
-      this.logger.log(`Synchronized quiz created: ${data.quizId}`);
+      console.log(`Sequential quiz started: ${data.quizId} with ${transformedQuestions.length} questions`);
+
+      // Auto-start the first question after a short delay
+      setTimeout(() => {
+        this.autoAdvanceToNextQuestion(data.quizId);
+      }, 2000);
 
     } catch (error) {
-      this.logger.error('Error creating synchronized quiz:', error);
+      console.error('Error starting sequential quiz:', error);
       client.emit('error', { 
-        message: 'Failed to create quiz',
+        message: 'Failed to start quiz',
         error: error.message 
       });
     }
   }
 
-  @SubscribeMessage('joinSynchronizedQuiz')
-  async handleJoinSynchronizedQuiz(
+  @SubscribeMessage('joinSequentialQuiz')
+  async handleJoinSequentialQuiz(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { quizId: string; userId: string }
+    @MessageBody() data: { quizId: string }
   ) {
     try {
       const user = this.onlineUsers.get(client.id);
@@ -391,62 +357,38 @@ export class QuizGateway implements OnGatewayConnection, OnGatewayDisconnect {
         return;
       }
 
-      this.logger.log(`User ${user.username} joining synchronized quiz: ${data.quizId}`);
+      this.logger.log(`User ${user.username} joining sequential quiz: ${data.quizId}`);
 
-      const quizSession = this.quizSessions.get(data.quizId);
+      const quizSession = this.sequentialQuizSessions.get(data.quizId);
       if (!quizSession) {
         client.emit('error', { message: 'Quiz not found' });
         return;
       }
 
-      if (quizSession.started) {
+      if (quizSession.started && quizSession.currentQuestionIndex >= 0) {
         client.emit('error', { message: 'Quiz has already started' });
         return;
       }
 
-      // Add player to quiz
       quizSession.players.set(client.id, user);
+      client.join(data.quizId);
 
-      // Load questions if this is the first player after host
-      if (quizSession.questions.length === 0) {
-        const questions = await this.quizService.getRandomQuestions(10);
-        quizSession.questions = questions.map((q, index) => ({
-          _id: q._id.toString(),
-          id: q._id.toString(),
-          question: q.question,
-          options: Array.isArray(q.options) 
-            ? q.options.map((opt, optIndex) => ({
-                id: opt._id?.toString() || `opt-${index}-${optIndex}`,
-                text: opt.text,
-                isCorrect: opt.isCorrect,
-              }))
-            : [],
-          category: q.category || 'General',
-          difficulty: q.difficulty || 'Medium',
-        }));
-      }
-
-      // Notify the joining client
-      client.emit('synchronizedQuizJoined', {
+      client.emit('sequentialQuizJoined', {
         quizId: data.quizId,
-        questions: quizSession.questions,
+        totalQuestions: quizSession.questions.length,
+        currentQuestionIndex: quizSession.currentQuestionIndex,
         players: Array.from(quizSession.players.values()),
-        host: this.onlineUsers.get(quizSession.hostId),
       });
 
-      // Notify all players about new player
-      this.server.to(data.quizId).emit('playerJoined', {
+      this.server.to(data.quizId).emit('playerJoinedSequential', {
         player: user,
         players: Array.from(quizSession.players.values()),
       });
 
-      // Join the room for this quiz
-      client.join(data.quizId);
-
-      this.logger.log(`User ${user.username} joined synchronized quiz: ${data.quizId}`);
+      this.logger.log(`User ${user.username} joined sequential quiz: ${data.quizId}`);
 
     } catch (error) {
-      this.logger.error('Error joining synchronized quiz:', error);
+      this.logger.error('Error joining sequential quiz:', error);
       client.emit('error', { 
         message: 'Failed to join quiz',
         error: error.message 
@@ -454,21 +396,459 @@ export class QuizGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  // ========== UTILITY METHODS ==========
+  // REMOVED: handleRequestNextQuestion - No longer needed as questions advance automatically
+@SubscribeMessage('submitSequentialAnswer')
+async handleSubmitSequentialAnswer(
+  @ConnectedSocket() client: Socket,
+  @MessageBody() data: { 
+    quizId: string; 
+    questionIndex: number;
+    answerIndex: number;
+    timeSpent: number;
+  }
+) {
+  try {
+    const user = this.onlineUsers.get(client.id);
+    const quizSession = this.sequentialQuizSessions.get(data.quizId);
 
-  private async authenticateUser(token: string): Promise<any> {
-    try {
-      // Here you would verify the JWT token
-      // For now, return a mock user
-      return {
-        userId: 'user-' + Date.now(),
-        username: 'user-' + Math.random().toString(36).substr(2, 9),
-      };
-    } catch (error) {
-      this.logger.error('Authentication error:', error);
-      return null;
+    if (!quizSession || !user) {
+      client.emit('error', { message: 'Invalid quiz or user' });
+      return;
+    }
+
+    console.log('🔍 [BACKEND] Answer submission received:', {
+      user: user.username,
+      quizId: data.quizId,
+      questionIndex: data.questionIndex,
+      answerIndex: data.answerIndex,
+      timeSpent: data.timeSpent
+    });
+
+    // Track that this player has answered
+    quizSession.answeredPlayers.add(client.id);
+
+    // Use the STORED original question for validation
+    const originalQuestion = quizSession.originalQuestions[data.questionIndex];
+    
+    if (!originalQuestion) {
+      console.error('❌ [BACKEND] Original question not found in session for index:', data.questionIndex);
+      client.emit('error', { message: 'Question not found in session' });
+      return;
+    }
+
+    // Validate answer index
+    if (data.answerIndex < 0 || data.answerIndex >= originalQuestion.options.length) {
+      console.error('❌ [BACKEND] Invalid answer index:', data.answerIndex);
+      client.emit('error', { message: 'Invalid answer index' });
+      return;
+    }
+
+    // BACKEND VALIDATION: Check if the answer is correct using stored original question
+    const selectedOption = originalQuestion.options[data.answerIndex];
+    const isCorrect = selectedOption?.isCorrect || false;
+
+    // Find the correct answer text for frontend display
+    const correctAnswerOption = originalQuestion.options.find(opt => opt.isCorrect);
+    const correctAnswerText = correctAnswerOption?.text || '';
+
+    console.log('✅ [BACKEND] Answer validation result:', {
+      selectedAnswerIndex: data.answerIndex,
+      selectedAnswerText: selectedOption?.text,
+      isCorrect: isCorrect,
+      correctAnswerIndex: originalQuestion.options.findIndex(opt => opt.isCorrect),
+      correctAnswerText: correctAnswerText
+    });
+
+    // Send result back to answering client
+    const responseData = {
+      quizId: data.quizId,
+      questionIndex: data.questionIndex,
+      isCorrect,
+      correctAnswer: correctAnswerText,
+      timeSpent: data.timeSpent,
+      isFinalQuestion: data.questionIndex === quizSession.questions.length - 1
+    };
+
+    console.log('📤 [BACKEND] Sending response to client:', responseData);
+
+    client.emit('sequentialAnswerResult', responseData);
+
+    // Notify all players about this player's answer
+    this.server.to(data.quizId).emit('playerAnsweredSequential', {
+      player: user,
+      questionIndex: data.questionIndex,
+      isCorrect: isCorrect,
+      isFinalQuestion: data.questionIndex === quizSession.questions.length - 1
+    });
+
+    // 🏆 FASTEST WINNER LOGIC FOR FINAL QUESTION
+    const isFinalQuestion = data.questionIndex === quizSession.questions.length - 1;
+    
+    if (isFinalQuestion && isCorrect) {
+      console.log(`🏆 [BACKEND] Final question answered correctly by ${user.username}`);
+      
+      // Check if this is the first correct answer for the final question
+      if (!this.fastestAnswerWinners.has(data.quizId)) {
+        // This is the first correct answer - they win immediately!
+        const winnerData = {
+          userId: user.userId,
+          username: user.username,
+          timeSpent: data.timeSpent
+        };
+        
+        this.fastestAnswerWinners.set(data.quizId, winnerData);
+
+        console.log(`🎯 [BACKEND] IMMEDIATE WINNER: ${user.username} answered final question in ${data.timeSpent}s`);
+        
+        // Immediately declare winner and end the game
+        this.server.to(data.quizId).emit('fastestWinnerDeclared', {
+          quizId: data.quizId,
+          winner: winnerData,
+          questionIndex: data.questionIndex,
+          message: `${user.username} wins the game by answering the final question first!`
+        });
+
+        // Stop all timers and clean up the session
+        this.endQuizImmediately(data.quizId);
+      }
+    }
+
+    // Check if all active players have answered (for early advancement) - but NOT for final question
+    const allAnswered = this.checkAllPlayersAnswered(quizSession);
+    
+    // If all players answered and it's NOT the final question, advance immediately
+    if (allAnswered && !isFinalQuestion) {
+      console.log(`🎯 All players answered early for quiz ${quizSession.quizId}, advancing immediately`);
+      
+      // Clear the current timer since we're advancing early
+      if (quizSession.questionTimer) {
+        clearTimeout(quizSession.questionTimer);
+      }
+      
+      // Auto-advance after a short delay to show results
+      setTimeout(() => {
+        this.autoAdvanceToNextQuestion(data.quizId);
+      }, 2000);
+    }
+
+  } catch (error) {
+    console.error('❌ [BACKEND] Error submitting sequential answer:', error);
+    client.emit('error', { 
+      message: 'Failed to submit answer',
+      error: error.message 
+    });
+  }
+}
+
+/**
+ * Immediately end the quiz when a winner is declared
+ */
+private endQuizImmediately(quizId: string): void {
+  const quizSession = this.sequentialQuizSessions.get(quizId);
+  if (!quizSession) return;
+
+  console.log(`🛑 [BACKEND] Immediately ending quiz ${quizId} due to winner`);
+
+  quizSession.finished = true;
+  
+  // Clean up all timers immediately
+  if (quizSession.questionTimer) {
+    clearTimeout(quizSession.questionTimer);
+    quizSession.questionTimer = undefined;
+  }
+  
+  if (quizSession.autoAdvanceTimer) {
+    clearTimeout(quizSession.autoAdvanceTimer);
+    quizSession.autoAdvanceTimer = undefined;
+  }
+
+  // 🚨 IMPORTANT: DO NOT automatically clean up the session
+  // Let it stay alive until users manually leave
+  console.log(`📝 [BACKEND] Quiz ${quizId} marked as finished - session kept alive`);
+  
+  // The session will be cleaned up when the last player disconnects
+  // or through manual cleanup methods
+}
+
+/**
+ * Manual cleanup when user returns home
+ */
+@SubscribeMessage('leaveQuizSession')
+handleLeaveQuizSession(
+  @ConnectedSocket() client: Socket,
+  @MessageBody() data: { quizId: string }
+) {
+  console.log(`🚪 [BACKEND] User leaving quiz session: ${data.quizId}`);
+  
+  // Remove player from session
+  const quizSession = this.sequentialQuizSessions.get(data.quizId);
+  if (quizSession) {
+    quizSession.players.delete(client.id);
+    
+    // If no players left in session, clean it up
+    const connectedPlayers = Array.from(quizSession.players.keys()).filter(playerId => 
+      this.isPlayerConnected(playerId)
+    );
+    
+    if (connectedPlayers.length === 0) {
+      console.log(`🧹 [BACKEND] No players left - cleaning up session: ${data.quizId}`);
+      this.sequentialQuizSessions.delete(data.quizId);
     }
   }
+  
+  client.leave(data.quizId);
+}
+
+  private checkAllPlayersAnswered(quizSession: SequentialQuizSession): boolean {
+    const activePlayers = Array.from(quizSession.players.keys()).filter(playerId => {
+      const player = quizSession.players.get(playerId);
+      return player && this.isPlayerConnected(playerId);
+    });
+
+    const allAnswered = activePlayers.every(playerId => 
+      quizSession.answeredPlayers.has(playerId)
+    );
+
+    if (allAnswered && activePlayers.length > 0) {
+      console.log(`🎯 All ${activePlayers.length} active players have answered for quiz ${quizSession.quizId}`);
+      return true;
+    }
+    
+    return false;
+  }
+
+  private isPlayerConnected(playerId: string): boolean {
+    const socket = this.server.sockets.sockets?.get(playerId);
+    return !!(socket && socket.connected);
+  }
+
+  // ========== SOLO QUIZ HANDLERS ==========
+
+@SubscribeMessage('getSoloQuestions')
+async handleGetSoloQuestions(
+  @ConnectedSocket() client: Socket,
+  @MessageBody() data: { count: number; mode?: string }
+) {
+  try {
+    const user = this.onlineUsers.get(client.id);
+    if (!user) {
+      client.emit('soloQuestionsError', { message: 'User not authenticated' });
+      return;
+    }
+
+    console.log(`🎯 [Solo] Getting ${data.count} questions for user ${user.username}`);
+    const questions = await this.quizService.getRandomQuestions(data.count || 10);
+    
+    // ✅ STORE the original questions for later validation
+    const soloSession: SoloQuizSession = {
+      userId: user.userId,
+      questions: questions, // Store ORIGINAL questions with isCorrect
+      startTime: Date.now()
+    };
+    this.soloQuizSessions.set(user.userId, soloSession);
+
+    // Transform for frontend (remove isCorrect)
+    const transformedQuestions = this.transformQuestionsForOnline(questions);
+
+    client.emit('soloQuestionsLoaded', {
+      questions: transformedQuestions,
+      totalQuestions: transformedQuestions.length,
+      mode: data.mode || 'solo',
+      timestamp: Date.now(),
+    });
+
+    console.log(`✅ [Solo] Sent ${transformedQuestions.length} sanitized questions to ${user.username}`);
+
+  } catch (error) {
+    console.error('❌ Error getting solo questions:', error);
+    client.emit('soloQuestionsError', { message: 'Failed to load questions', error: error.message });
+  }
+}
+
+@SubscribeMessage('submitSoloAnswer')
+async handleSubmitSoloAnswer(
+  @ConnectedSocket() client: Socket,
+  @MessageBody() data: { quizId: string; questionIndex: number; answerIndex: number; timeSpent: number; }
+) {
+  try {
+    const user = this.onlineUsers.get(client.id);
+    if (!user) {
+      client.emit('error', { message: 'User not authenticated' });
+      return;
+    }
+
+    console.log(`🎯 [Solo] Answer submission from ${user.username}:`, {
+      questionIndex: data.questionIndex,
+      answerIndex: data.answerIndex,
+      timeSpent: data.timeSpent
+    });
+
+    // ✅ FIX: Use the STORED questions instead of fetching new ones
+    const soloSession = this.soloQuizSessions.get(user.userId);
+    if (!soloSession || !soloSession.questions) {
+      console.error('❌ [Solo] No stored questions found for user:', user.username);
+      client.emit('error', { message: 'Quiz session expired. Please restart the quiz.' });
+      return;
+    }
+
+    if (data.questionIndex >= soloSession.questions.length) {
+      client.emit('error', { message: 'Invalid question index' });
+      return;
+    }
+
+    // Use the stored original question for validation
+    const originalQuestion = soloSession.questions[data.questionIndex];
+    
+    // Validate the answer
+    const selectedOption = originalQuestion.options[data.answerIndex];
+    const isCorrect = selectedOption?.isCorrect || false;
+
+    // Find the correct answer text for frontend display
+    const correctAnswerOption = originalQuestion.options.find(opt => opt.isCorrect);
+    const correctAnswerText = correctAnswerOption?.text || '';
+
+    console.log(`✅ [Solo] Validation result for ${user.username}:`, {
+      isCorrect: isCorrect,
+      correctAnswerText: correctAnswerText,
+      selectedAnswerText: selectedOption?.text,
+      // Debug: Show what options we have
+      availableOptions: originalQuestion.options.map(opt => ({ text: opt.text, isCorrect: opt.isCorrect }))
+    });
+
+    // Send validation result back to client
+    client.emit('soloAnswerValidation', {
+      quizId: data.quizId,
+      questionIndex: data.questionIndex,
+      validated: true,
+      isCorrect: isCorrect,
+      correctAnswer: correctAnswerText,
+      timestamp: Date.now()
+    });
+
+  } catch (error) {
+    console.error('❌ Error processing solo answer:', error);
+    client.emit('error', { message: 'Failed to process answer', error: error.message });
+  }
+}
+
+  // ========== UTILITY METHODS ==========
+
+  private transformQuestionsForOnline(questions: any[]): any[] {
+    console.log('🔄 [BACKEND] Transforming questions for online mode - REMOVING isCorrect');
+    
+    return questions.map((q, index) => {
+      const transformedQuestion = {
+        id: `online-q-${Date.now()}-${index}`,
+        question: q.question,
+        options: Array.isArray(q.options) 
+          ? q.options.map((opt, optIndex) => {
+              const { isCorrect, ...cleanOption } = opt;
+              return {
+                id: `opt-${index}-${optIndex}`,
+                text: cleanOption.text,
+              };
+            })
+          : [],
+        category: q.category || 'General',
+        difficulty: q.difficulty || 'Medium',
+      };
+
+      const hasIsCorrect = transformedQuestion.options.some(opt => 'isCorrect' in opt);
+      if (hasIsCorrect) {
+        console.error('❌ [BACKEND] CRITICAL: isCorrect property was not removed!');
+        transformedQuestion.options = transformedQuestion.options.map(opt => {
+          const { isCorrect, ...cleanOpt } = opt;
+          return cleanOpt;
+        });
+      }
+
+      return transformedQuestion;
+    });
+  }
+
+  private transformQuestionsForSolo(questions: any[]): any[] {
+    return questions.map((q, index) => ({
+      id: `solo-q-${Date.now()}-${index}`,
+      question: q.question,
+      options: Array.isArray(q.options) 
+        ? q.options.map((opt, optIndex) => ({
+            id: `opt-${index}-${optIndex}`,
+            text: opt.text,
+            isCorrect: opt.isCorrect,
+          }))
+        : [],
+      category: q.category || 'General',
+      difficulty: q.difficulty || 'Medium',
+    }));
+  }
+
+private async authenticateUser(token: string): Promise<AuthenticatedUser | null> {
+  try {
+    console.log('🔐 [BACKEND] Authenticating user with token:', token);
+    
+    // Method 1: Decode JWT token (this is what you have)
+    try {
+      const payload = this.decodeJwt(token);
+      console.log('🔍 [BACKEND] JWT Payload:', payload);
+      
+      if (payload && payload.sub && payload.username) {
+        console.log('✅ [BACKEND] Authenticated user from JWT:', payload.username);
+        return {
+          userId: payload.sub, // Use 'sub' which contains the user ID
+          username: payload.username,
+        };
+      }
+    } catch (jwtError) {
+      console.log('⚠️ [BACKEND] JWT decoding failed:', jwtError.message);
+    }
+    
+    console.error('❌ [BACKEND] JWT authentication failed, using fallback');
+    // Fallback - but we should never reach this with a valid JWT
+    return {
+      userId: 'user-' + Date.now(),
+      username: 'user-' + Math.random().toString(36).substr(2, 9),
+    };
+    
+  } catch (error) {
+    this.logger.error('Authentication error:', error);
+    return null;
+  }
+}
+
+// Fix the JWT decoding method
+private decodeJwt(token: string): any {
+  try {
+    console.log('🔐 [BACKEND] Decoding JWT token...');
+    
+    // Remove any quotes if present
+    const cleanToken = token.replace(/"/g, '');
+    
+    const parts = cleanToken.split('.');
+    if (parts.length !== 3) {
+      console.error('❌ [BACKEND] Invalid JWT format - expected 3 parts, got:', parts.length);
+      return null;
+    }
+    
+    const payload = parts[1];
+    console.log('🔍 [BACKEND] JWT Payload part:', payload);
+    
+    // Add padding if needed for base64 decoding
+    let base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+    while (base64.length % 4) {
+      base64 += '=';
+    }
+    
+    const decoded = JSON.parse(Buffer.from(base64, 'base64').toString());
+    console.log('✅ [BACKEND] Successfully decoded JWT payload:', decoded);
+    return decoded;
+    
+  } catch (error) {
+    console.error('❌ [BACKEND] JWT decoding error:', error);
+    console.error('❌ [BACKEND] Token that failed:', token);
+    return null;
+  }
+}
+
 
   private broadcastOnlineUsers() {
     const users = Array.from(this.onlineUsers.values());
@@ -476,24 +856,30 @@ export class QuizGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   private cleanupUserSessions(socketId: string) {
-    for (const [quizId, session] of this.quizSessions.entries()) {
-      // Remove player from session
-      session.players.delete(socketId);
-
-      // If host disconnected, remove the session
-      if (session.hostId === socketId) {
-        this.quizSessions.delete(quizId);
-        this.server.to(quizId).emit('quizEnded', { 
-          message: 'Quiz ended because host disconnected' 
-        });
-      } else if (session.players.size === 0) {
-        // If no players left, remove session
-        this.quizSessions.delete(quizId);
+    console.log(`🧹 Cleaning up sessions for socket: ${socketId}`);
+    
+    for (const [quizId, session] of this.sequentialQuizSessions.entries()) {
+      const user = session.players.get(socketId);
+      
+      if (user) {
+        console.log(`➖ Player ${user.username} (${socketId}) disconnected from quiz: ${quizId}`);
+        
+        session.players.delete(socketId);
+        session.answeredPlayers.delete(socketId);
+        
+        // Check if session should end due to no players
+        const connectedPlayers = Array.from(session.players.keys()).filter(playerId => 
+          this.isPlayerConnected(playerId)
+        );
+        
+        if (connectedPlayers.length === 0 && !session.finished) {
+          console.log(`❌ No players left for quiz: ${quizId}, ending quiz`);
+          this.endQuiz(quizId);
+        }
       }
     }
   }
 
-  // Other methods remain the same...
   @SubscribeMessage('getOnlineUsers')
   handleGetOnlineUsers(@ConnectedSocket() client: Socket) {
     const users = Array.from(this.onlineUsers.values());

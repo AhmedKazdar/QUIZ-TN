@@ -1,32 +1,30 @@
 <!-- Quiz Results Section for Online Mode -->
-<div class="quiz-container" *ngIf="quizFinished && quizResult && mode === 'online'">
+<div class="quiz-container" *ngIf="quizFinished && mode === 'online'">
   <div class="quiz-result-card">
-    <!-- Winner Celebration for Online Mode -->
-    <div class="winner-celebration mb-4">
-      <div *ngIf="isWinner" class="alert alert-success text-center">
-        <i class="bi bi-trophy-fill me-2" style="font-size: 2rem;"></i>
-        <h3 class="mb-2">🏆 You Won! 🏆</h3>
-        <p class="mb-0">Congratulations! You are the champion!</p>
+    <!-- Fastest Winner Celebration -->
+    <div class="winner-celebration mb-4" *ngIf="gameWinner">
+      <div class="alert alert-success text-center" *ngIf="isWinner">
+        <i class="bi bi-trophy-fill me-2" style="font-size: 3rem;"></i>
+        <h2 class="mb-3">🏆 YOU WIN! 🏆</h2>
+        <h4 class="mb-2">Congratulations! You answered the final question first!</h4>
+        <p class="mb-1">Time: {{ gameWinner.timeSpent | number:'1.1-1' }} seconds</p>
+        <p class="mb-0">You are the fastest player and the champion!</p>
       </div>
-      <div *ngIf="gameWinner && !isWinner" class="alert alert-info text-center">
-        <i class="bi bi-flag-fill me-2"></i>
-        <h4 class="mb-2">Game Over</h4>
-        <p class="mb-1"><strong>Winner:</strong> {{ gameWinner.username }}</p>
+      
+      <div class="alert alert-info text-center" *ngIf="!isWinner">
+        <i class="bi bi-flag-fill me-2" style="font-size: 2.5rem;"></i>
+        <h3 class="mb-3">Game Over</h3>
+        <h4 class="mb-2">{{ gameWinner.username }} Wins!</h4>
+        <p class="mb-1">They answered the final question in {{ gameWinner.timeSpent | number:'1.1-1' }} seconds</p>
         <p class="mb-0">Better luck next time!</p>
-      </div>
-      <div *ngIf="!gameWinner" class="alert alert-warning text-center">
-        <i class="bi bi-emoji-neutral me-2"></i>
-        <h4 class="mb-2">Game Over - It's a Draw!</h4>
-        <p class="mb-0">No one answered the final question correctly.</p>
       </div>
     </div>
 
-    <!-- Score and details for all players -->
-    <div>
+    <!-- Regular Score Display (when no fastest winner) -->
+    <div *ngIf="!gameWinner && quizResult">
       <!-- Results Header -->
       <div class="result-header" [ngClass]="getScoreClass(quizResult?.score || 0)">
-        <h2 *ngIf="!isWinner">Game Over!</h2>
-        <h2 *ngIf="isWinner">You're the Winner!</h2>
+        <h2>Game Over!</h2>
         <p>Your Score: {{ quizResult?.score || 0 }}%</p>
       </div>
       
@@ -73,14 +71,21 @@
       
       <div class="result-mode">
         <i class="bi bi-trophy-fill me-2"></i>
-        <span *ngIf="isWinner">You've topped the leaderboard!</span>
-        <span *ngIf="!isWinner">Your score has been submitted to the leaderboard!</span>
+        <span>Your score has been submitted to the leaderboard!</span>
+      </div>
+    </div>
+
+    <!-- Fallback if neither winner nor quizResult -->
+    <div *ngIf="!gameWinner && !quizResult" class="text-center">
+      <div class="alert alert-warning">
+        <h3>Game Over</h3>
+        <p>The quiz has ended. No winner was determined.</p>
       </div>
     </div>
     
     <div class="result-actions">
       <button class="btn btn-primary me-2" type="button" (click)="restartQuiz()">
-        <i class="bi bi-arrow-repeat me-2"></i>Try Again
+        <i class="bi bi-arrow-repeat me-2"></i>Play Again
       </button>
       <button class="btn btn-outline-secondary" type="button" (click)="navigateToHome()">
         <i class="bi bi-house-door me-2"></i>Back to Home
@@ -165,7 +170,7 @@
 </div>
 
 <!-- Active Quiz Section -->
-<div class="quiz-container" *ngIf="quizStarted && !quizFinished">
+<div class="quiz-container" *ngIf="quizStarted && !quizFinished && !gameOver">
   <div class="quiz-card">
     <div class="d-flex justify-content-between align-items-center mb-3">
       <h2 class="mb-0">
@@ -182,7 +187,7 @@
                role="progressbar" 
                [attr.aria-valuenow]="currentQuestionIndex + 1" 
                aria-valuemin="0" 
-               [attr.aria-valuemax]="ariaValueMax">
+               [attr.aria-valuemax]="totalQuestionsCount">
           </div>
         </div>
         <div class="question-counter">
@@ -190,7 +195,7 @@
         </div>
       </div>
       <div class="d-flex align-items-center">
-        <!-- Timer for online mode -->
+        <!-- Timer for online mode ONLY -->
         <div class="quiz-timer me-3" *ngIf="mode === 'online'" [ngClass]="{
           'text-warning': timeRemaining <= 15 && timeRemaining > 5,
           'text-danger': timeRemaining <= 5
@@ -206,90 +211,130 @@
     </div>
     
     <div class="question-container" *ngIf="questions[currentQuestionIndex]">
-      <!-- Watch mode message when user is eliminated but not from timeout -->
-      <div class="alert alert-warning" *ngIf="watchMode && !error" role="alert">
-        <div class="d-flex align-items-center">
-          <i class="bi bi-eye-fill me-2"></i>
-          <div>
-            <h5 class="alert-heading mb-1">Watch Mode Activated</h5>
-            <p class="mb-0">You've been eliminated. You can continue watching the quiz but can no longer participate.</p>
+      <!-- Online Mode Only Elements -->
+      <div *ngIf="mode === 'online'">
+        <!-- Final Question Warning -->
+        <div class="alert alert-warning" *ngIf="isFinalQuestion" role="alert">
+          <div class="d-flex align-items-center">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i>
+            <div>
+              <h5 class="alert-heading mb-1">Final Question!</h5>
+              <p class="mb-0">First correct answer wins the entire game! Be quick!</p>
+            </div>
           </div>
         </div>
-      </div>
 
-      <!-- Time's up message - Different messages for final vs regular questions -->
-      <div class="alert alert-info" *ngIf="mode === 'online' && timeRemaining <= 0 && !quizFinished" role="alert">
-        <div class="d-flex align-items-center">
-          <i class="bi bi-clock-fill me-2"></i>
-          <div>
-            <h5 class="alert-heading mb-1" *ngIf="currentQuestionIndex === questions.length - 1">
-              Time's Up! Determining Winner...
-            </h5>
-            <h5 class="alert-heading mb-1" *ngIf="currentQuestionIndex < questions.length - 1">
-              Time's Up! Proceeding to next question...
-            </h5>
-            <p class="mb-0" *ngIf="currentQuestionIndex === questions.length - 1">
-              Final question completed. Calculating results...
-            </p>
-            <p class="mb-0" *ngIf="currentQuestionIndex < questions.length - 1">
-              Please wait while we proceed to the next question.
-            </p>
+        <!-- Quiz Status Information -->
+        <div class="quiz-status-info">
+          <div class="status-item" *ngIf="watchMode">
+            <i class="bi bi-eye-fill text-info"></i>
+            <span>Watch Mode</span>
+          </div>
+          <div class="status-item" *ngIf="timeRemaining <= 5 && timeRemaining > 0">
+            <i class="bi bi-clock text-danger"></i>
+            <span>Time almost up!</span>
+          </div>
+          <div class="status-item" *ngIf="answerSubmitted && timeRemaining > 0">
+            <i class="bi bi-check-circle text-success"></i>
+            <span>Answer Submitted</span>
+          </div>
+          <div class="status-item" *ngIf="isFinalQuestion">
+            <i class="bi bi-trophy text-warning"></i>
+            <span>Final Question - Winner Takes All!</span>
+          </div>
+        </div>
+
+        <!-- Watch mode message -->
+        <div class="alert alert-warning" *ngIf="watchMode" role="alert">
+          <div class="d-flex align-items-center">
+            <i class="bi bi-eye-fill me-2"></i>
+            <div>
+              <h5 class="alert-heading mb-1">Watch Mode Activated</h5>
+              <p class="mb-0">You've been eliminated. You can continue watching the quiz but can no longer participate.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Time's up and progression messages -->
+        <div *ngIf="showAnswerFeedback && !isFinalQuestion" class="alert alert-info">
+          <div class="d-flex align-items-center">
+            <i class="bi bi-clock-history me-2"></i>
+            <div>
+              <h5 class="alert-heading mb-1">Advancing to next question...</h5>
+              <p class="mb-0">Next question starting shortly.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Final question completion message -->
+        <div class="alert alert-info" *ngIf="timeRemaining <= 0 && isFinalQuestion && !quizFinished" role="alert">
+          <div class="d-flex align-items-center">
+            <i class="bi bi-clock-fill me-2"></i>
+            <div>
+              <h5 class="alert-heading mb-1">Time's Up! Determining Winner...</h5>
+              <p class="mb-0">Waiting for fastest correct answer...</p>
+            </div>
           </div>
         </div>
       </div>
       
       <h3 class="question-text">{{ questions[currentQuestionIndex].question }}</h3>
       
-      <!-- Waiting message for online mode -->
-      <div *ngIf="mode === 'online' && waitingForAnswer" class="waiting-container text-center my-4">
-        <div class="spinner-border text-primary mb-3" role="status">
-          <span class="visually-hidden">Loading...</span>
-        </div>
-        <h4>Waiting for other players...</h4>
-      </div>
-      
-      <!-- OPTIONS CONTAINER - UPDATED FOR SOLO MODE FEEDBACK -->
-      <div class="options-container" [class.waiting]="mode === 'online' && waitingForAnswer">
+      <!-- OPTIONS CONTAINER -->
+      <div class="options-container">
         <div *ngFor="let option of questions[currentQuestionIndex].options; let i = index" 
              class="option" 
              [class.selected]="selectedAnswer === i"
-             [class.answered]="answers[currentQuestionIndex] !== null && answers[currentQuestionIndex] !== undefined"
-             [class.correct]="(mode === 'solo' && showAnswerFeedback && option.isCorrect) || 
-                             (mode === 'online' && ((timeRemaining <= 0 && option.isCorrect) || (watchMode && timeRemaining <= 0 && option.isCorrect)))"
-             [class.incorrect]="(mode === 'solo' && showAnswerFeedback && selectedAnswer === i && !option.isCorrect) ||
-                               (mode === 'online' && timeRemaining <= 0 && selectedAnswer === i && !option.isCorrect)"
-             [class.disabled]="(mode === 'solo' && showAnswerFeedback) || watchMode || timeRemaining <= 0"
-             (click)="!watchMode && timeRemaining > 0 && !(mode === 'solo' && showAnswerFeedback) && selectAnswer(i)">
+             [class.correct]="showAnswerFeedback && currentCorrectAnswerIndex === i"
+             [class.incorrect]="showAnswerFeedback && selectedAnswer === i && currentCorrectAnswerIndex !== i"
+             [class.watch-mode-correct]="mode === 'online' && watchMode && showAnswerFeedback && currentCorrectAnswerIndex === i"
+             [class.disabled]="(mode === 'online' && (watchMode || timeRemaining <= 0)) || (mode === 'solo' && answerSubmitted)"
+             (click)="selectAnswer(i)">
           
           <div class="option-letter">{{ getLetter(i) }}</div>
           <div class="option-text">{{ option.text }}</div>
           
-          <!-- Answer feedback for solo mode -->
-          <div class="answer-feedback" *ngIf="mode === 'solo' && showAnswerFeedback">
+          <!-- Answer feedback -->
+          <div class="answer-feedback" *ngIf="showAnswerFeedback">
             <i class="bi" [ngClass]="{
-              'bi-check-circle-fill text-success': option.isCorrect,
-              'bi-x-circle-fill text-danger': selectedAnswer === i && !option.isCorrect
+              'bi-check-circle-fill text-success': currentCorrectAnswerIndex === i,
+              'bi-x-circle-fill text-danger': selectedAnswer === i && currentCorrectAnswerIndex !== i
             }"></i>
           </div>
           
-          <!-- Answer feedback for online mode -->
-          <div class="answer-feedback" *ngIf="mode === 'online' && ((timeRemaining <= 0 && selectedAnswer !== null && !waitingForAnswer) || quizFinished || (watchMode && timeRemaining <= 0))">
-            <i class="bi" [ngClass]="{
-              'bi-check-circle-fill text-success': option.isCorrect,
-              'bi-x-circle-fill text-danger': selectedAnswer === i && !option.isCorrect
-            }"></i>
-          </div>
-          
-          <!-- Watch mode indicator -->
-          <div class="watch-mode-overlay" *ngIf="watchMode && timeRemaining > 0">
-            <i class="bi bi-eye"></i>
-            <span>View Only</span>
+          <!-- Online mode specific overlays -->
+          <div *ngIf="mode === 'online'">
+            <div class="watch-mode-correct-indicator" 
+                 *ngIf="watchMode && showAnswerFeedback && currentCorrectAnswerIndex === i">
+              <i class="bi bi-star-fill"></i>
+              <span>Correct Answer</span>
+            </div>
+
+            <div class="watch-mode-overlay" *ngIf="watchMode && timeRemaining > 0 && !showAnswerFeedback">
+              <i class="bi bi-eye"></i>
+              <span>View Only</span>
+            </div>
+
+            <div class="time-expired-overlay" *ngIf="timeRemaining <= 0 && !showAnswerFeedback">
+              <i class="bi bi-hourglass-split"></i>
+              <span>Time's Up!</span>
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- Correct answer message for solo mode -->
-      <div *ngIf="mode === 'solo' && showAnswerFeedback && currentCorrectAnswerIndex !== null && questions[currentQuestionIndex]" class="correct-answer-message">
+      <!-- Solo Mode Immediate Feedback -->
+      <div *ngIf="mode === 'solo' && showAnswerFeedback" class="solo-feedback-message" [ngClass]="feedbackClass">
+        <i class="bi" [ngClass]="{
+          'bi-check-circle-fill': isAnswerCorrect,
+          'bi-x-circle-fill': !isAnswerCorrect
+        }"></i>
+        <span>{{ feedbackMessage }}</span>
+        <small class="d-block mt-1">Moving to next question...</small>
+      </div>
+
+      <!-- Correct answer message for both modes -->
+      <div *ngIf="showAnswerFeedback && currentCorrectAnswerIndex !== null && questions[currentQuestionIndex]" class="correct-answer-message">
         <p *ngIf="selectedAnswer !== currentCorrectAnswerIndex">
           Correct answer: {{ getLetter(currentCorrectAnswerIndex) }}. {{ questions[currentQuestionIndex].options[currentCorrectAnswerIndex]?.text }}
         </p>
@@ -298,18 +343,15 @@
         </p>
       </div>
     </div>
-    
-   <!--  <div class="quiz-actions">
-      
-      <button *ngIf="mode === 'solo'" 
-              class="btn btn-primary" 
-              (click)="nextQuestion()" 
-              [disabled]="selectedAnswer === null || loading">
-        <span *ngIf="loading" class="spinner-border spinner-border-sm me-2"></span>
-        {{ currentQuestionIndex === questions.length - 1 ? 'Finish Quiz' : 'Next Question' }}
-        <i class="bi bi-arrow-right ms-2"></i>
-      </button>
-    </div> -->
+
+    <!-- Loading state for online mode -->
+    <div class="waiting-container" *ngIf="loading && mode === 'online'">
+      <div class="spinner-border" role="status">
+        <span class="visually-hidden">Loading...</span>
+      </div>
+      <h4 *ngIf="isFinalQuestion && timeRemaining <= 0">Determining winner...</h4>
+      <h4 *ngIf="!isFinalQuestion">Loading next question...</h4>
+    </div>
   </div>
 </div>
 
