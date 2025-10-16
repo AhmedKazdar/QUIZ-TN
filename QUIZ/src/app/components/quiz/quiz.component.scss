@@ -114,6 +114,11 @@ $breakpoint-md: 768px;
   to { transform: rotate(360deg); }
 }
 
+@keyframes slideInDown {
+  from { transform: translateY(-100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
 // =============================================================================
 // BASE COMPONENTS
 // =============================================================================
@@ -176,6 +181,149 @@ $breakpoint-md: 768px;
     cursor: not-allowed;
     transform: none;
     box-shadow: none;
+  }
+}
+
+// =============================================================================
+// WATCH MODE STYLES
+// =============================================================================
+
+.watch-mode-banner {
+  border-left: 4px solid color(warning);
+  background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
+  margin: 0;
+  border-radius: 0;
+  animation: slideInDown 0.5s ease-out;
+  
+  .badge {
+    font-size: 0.75rem;
+    padding: spacing(xs) spacing(sm);
+  }
+}
+
+.watch-mode-badge {
+  font-size: 0.75rem;
+}
+
+.watch-mode-timer {
+  opacity: 0.7;
+  font-style: italic;
+  background-color: rgba(color(warning), 0.1) !important;
+  border-color: rgba(color(warning), 0.2) !important;
+  color: darken(color(warning), 20%) !important;
+}
+
+.watch-mode-option {
+  cursor: not-allowed !important;
+  opacity: 0.9;
+  
+  &:hover {
+    border-color: color(border) !important;
+    box-shadow: none !important;
+    transform: none !important;
+  }
+}
+
+.watch-mode-container {
+  position: relative;
+}
+
+.watch-mode-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.95);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  color: color(secondary);
+  font-weight: font-weight(medium);
+  border-radius: $border-radius-sm;
+  z-index: 5;
+  backdrop-filter: blur(2px);
+  
+  i {
+    font-size: 1.5rem;
+    margin-bottom: spacing(xs);
+    color: color(secondary);
+  }
+  
+  span {
+    font-weight: font-weight(medium);
+    font-size: 0.9rem;
+  }
+}
+
+.watch-mode-status {
+  background: #fff3cd;
+  border: 1px solid #ffeaa7;
+  border-radius: 4px;
+  padding: 4px 8px;
+  color: darken(color(warning), 30%);
+  animation: pulse 2s infinite;
+}
+
+.watch-mode-correct-indicator {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background: color(success);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: font-weight(bold);
+  z-index: 10;
+  animation: bounceIn 0.3s ease-out;
+}
+
+.watch-mode-time-expired {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(color(success), 0.9);
+  color: white;
+  padding: 8px 12px;
+  border-radius: 20px;
+  font-weight: font-weight(bold);
+  z-index: 10;
+  animation: bounceIn 0.3s ease-out;
+}
+
+.watch-mode-progression {
+  background: rgba(color(info), 0.05);
+  border: 1px solid rgba(color(info), 0.2);
+  color: color(info);
+  
+  i {
+    color: color(info);
+  }
+}
+
+// Quiz Status Info
+.quiz-status-info {
+  display: flex;
+  gap: spacing(md);
+  flex-wrap: wrap;
+  margin-bottom: spacing(lg);
+  
+  .status-item {
+    display: flex;
+    align-items: center;
+    padding: spacing(xs) spacing(sm);
+    background: color(light-bg);
+    border-radius: $border-radius-sm;
+    font-size: 0.9rem;
+    font-weight: font-weight(medium);
+    transition: all 0.3s ease;
+    
+    i {
+      margin-right: spacing(xs);
+    }
   }
 }
 
@@ -553,6 +701,28 @@ $breakpoint-md: 768px;
     }
   }
 
+  // Watch mode specific styles
+  &.watch-mode-option {
+    cursor: not-allowed !important;
+    opacity: 0.9;
+    
+    &:hover {
+      border-color: color(border) !important;
+      box-shadow: none !important;
+      transform: none !important;
+    }
+  }
+  
+  &.watch-mode-correct {
+    border-color: color(success);
+    background-color: rgba(color(success), 0.12);
+    
+    .option-letter {
+      background: color(success);
+      color: white;
+    }
+  }
+
   // Option elements
   .option-letter {
     width: 40px;
@@ -587,6 +757,7 @@ $breakpoint-md: 768px;
   
   // Overlays
   .watch-mode-overlay,
+  .time-expired-overlay,
   .submitted-overlay {
     position: absolute;
     top: 0;
@@ -595,9 +766,10 @@ $breakpoint-md: 768px;
     bottom: 0;
     @include flex-center;
     flex-direction: column;
-    border-radius: $border-radius;
+    border-radius: $border-radius-sm;
     opacity: 0;
     transition: opacity 0.3s ease;
+    z-index: 5;
     
     i {
       font-size: 1.5rem;
@@ -611,10 +783,18 @@ $breakpoint-md: 768px;
   }
   
   .watch-mode-overlay {
-    background: rgba(white, 0.9);
+    background: rgba(white, 0.95);
+    backdrop-filter: blur(2px);
     
     i { color: color(secondary); }
     span { color: color(secondary); }
+  }
+  
+  .time-expired-overlay {
+    background: rgba(white, 0.9);
+    
+    i { color: color(danger); }
+    span { color: color(danger); }
   }
   
   .submitted-overlay {
@@ -723,8 +903,7 @@ $breakpoint-md: 768px;
   }
 }
 
-.correct-answer-message,
-.watch-mode-banner {
+.correct-answer-message {
   background: rgba(color(success), 0.1);
   border: 2px solid rgba(color(success), 0.3);
   border-radius: $border-radius;
@@ -738,6 +917,10 @@ $breakpoint-md: 768px;
     margin: 0;
     font-size: 1.1rem;
     color: darken(color(success), 20%);
+    
+    strong {
+      font-weight: font-weight(bold);
+    }
   }
   
   @include mobile {
@@ -747,10 +930,40 @@ $breakpoint-md: 768px;
   }
 }
 
-.watch-mode-banner {
-  background: rgba(color(warning), 0.1);
-  border-color: rgba(color(warning), 0.3);
-  color: darken(color(warning), 30%);
+.solo-feedback-message {
+  padding: spacing(lg);
+  border-radius: $border-radius;
+  margin: spacing(md) 0;
+  text-align: center;
+  font-weight: font-weight(bold);
+  font-size: 1.1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: bounceIn 0.3s ease-out;
+  
+  &.feedback-correct {
+    background-color: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+  }
+  
+  &.feedback-incorrect {
+    background-color: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+  }
+  
+  i {
+    margin-right: spacing(sm);
+    font-size: 1.2rem;
+  }
+  
+  small {
+    font-weight: font-weight(normal);
+    font-size: 0.9rem;
+    opacity: 0.8;
+  }
 }
 
 .loading {
@@ -794,6 +1007,10 @@ $breakpoint-md: 768px;
       background-color: white;
     }
   }
+  
+  .watch-mode-banner {
+    border-width: 3px;
+  }
 }
 
 // Reduced motion
@@ -803,33 +1020,4 @@ $breakpoint-md: 768px;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
-.solo-feedback-message {
-  padding: 1rem;
-  border-radius: 8px;
-  margin: 1rem 0;
-  text-align: center;
-  font-weight: bold;
-  font-size: 1.1rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  
-  &.feedback-correct {
-    background-color: #d4edda;
-    color: #155724;
-    border: 1px solid #c3e6cb;
-  }
-  
-  &.feedback-incorrect {
-    background-color: #f8d7da;
-    color: #721c24;
-    border: 1px solid #f5c6cb;
-  }
-  
-  i {
-    margin-right: 0.5rem;
-    font-size: 1.2rem;
-  }
-}
-  
 }

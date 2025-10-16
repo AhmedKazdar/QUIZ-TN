@@ -4,7 +4,7 @@ import { Subscription, Observable, interval } from 'rxjs';
 import { AuthService } from '../../services/auth.service';
 import { ScoreService } from '../../services/api/score.service';
 import { SocketService, OnlineUser } from '../../services/socket.service';
-import { QuizService, Question, QuizResult, GameWinner, SoloAnswerValidationRequest } from 'src/app/services/quiz.service';
+import { QuizService, Question, QuizResult, GameWinner, SoloAnswerValidationRequest, AnswerOption } from 'src/app/services/quiz.service';
 
 interface Score {
   _id: string;
@@ -61,6 +61,8 @@ export class QuizComponent implements OnInit, OnDestroy {
 
   /*** Answer Submission State ***/
   answerSubmitted = false;
+  correctAnswersCount = 0;
+
 
   /*** Internals ***/
   private quizSubscription: Subscription | null = null;
@@ -133,6 +135,8 @@ export class QuizComponent implements OnInit, OnDestroy {
 
   restartQuiz(): void {
     console.log('🔄 Restarting quiz in mode:', this.mode);
+
+     this.correctAnswersCount = 0;
     
     if (this.mode === 'online' && this.quizId) {
       this.quizService.leaveQuizSession(this.quizId).subscribe();
@@ -225,7 +229,7 @@ export class QuizComponent implements OnInit, OnDestroy {
       }
     });
 
-    // ADD THIS: Solo answer validation listener
+    // Solo answer validation listener
     const soloAnswerValidationSub = this.quizService.onSoloAnswerValidation().subscribe((data: any) => {
       console.log('✅ Solo answer validation result:', data);
       if (this.mode === 'solo' && data.validated) {
@@ -375,10 +379,10 @@ export class QuizComponent implements OnInit, OnDestroy {
       }
     });
 
-    // Add all subscriptions (INCLUDE the solo answer validation)
+    // Add all subscriptions
     this.socketSubscriptions.add(soloQuestionsLoadedSub);
     this.socketSubscriptions.add(soloQuestionsErrorSub);
-    this.socketSubscriptions.add(soloAnswerValidationSub); // ADD THIS LINE
+    this.socketSubscriptions.add(soloAnswerValidationSub);
     this.socketSubscriptions.add(sequentialQuizStartedSub);
     this.socketSubscriptions.add(timeExpiredSub);
     this.socketSubscriptions.add(sequentialQuizJoinedSub);
@@ -394,58 +398,64 @@ export class QuizComponent implements OnInit, OnDestroy {
     this.socketSubscriptions.add(statusSub);
   }
 
-private findSoloCorrectAnswerIndex(correctAnswerText: string): number | null {
-  const currentQuestion = this.questions[this.currentQuestionIndex];
-  if (!currentQuestion?.options) {
-    console.warn('❌ [Solo] No options available for current question');
+  private findSoloCorrectAnswerIndex(correctAnswerText: string): number | null {
+    const currentQuestion = this.questions[this.currentQuestionIndex];
+    if (!currentQuestion?.options) {
+      console.warn('❌ [Solo] No options available for current question');
+      return null;
+    }
+
+    console.log('🔍 [Solo] Finding correct answer:', {
+      correctAnswerText,
+      availableOptions: currentQuestion.options.map(opt => opt.text)
+    });
+
+    // Normalize for comparison
+    const normalizedCorrect = correctAnswerText.trim().toLowerCase();
+    
+    for (let i = 0; i < currentQuestion.options.length; i++) {
+      const optionText = currentQuestion.options[i].text.trim().toLowerCase();
+      
+      // Exact match
+      if (optionText === normalizedCorrect) {
+        console.log(`✅ [Solo] Exact match found at index ${i}`);
+        return i;
+      }
+      
+      // Handle ellipsis and partial matches
+      const cleanOption = optionText.replace('...', '').trim();
+      const cleanCorrect = normalizedCorrect.replace('...', '').trim();
+      
+      if (cleanOption === cleanCorrect) {
+        console.log(`✅ [Solo] Clean match found at index ${i}`);
+        return i;
+      }
+      
+      // Contains match
+      if (optionText.includes(normalizedCorrect) || normalizedCorrect.includes(optionText)) {
+        console.log(`✅ [Solo] Contains match found at index ${i}`);
+        return i;
+      }
+    }
+
+    console.warn('❌ [Solo] No matching answer found in options');
     return null;
   }
 
-  console.log('🔍 [Solo] Finding correct answer:', {
-    correctAnswerText,
-    availableOptions: currentQuestion.options.map(opt => opt.text)
-  });
-
-  // Normalize for comparison
-  const normalizedCorrect = correctAnswerText.trim().toLowerCase();
-  
-  for (let i = 0; i < currentQuestion.options.length; i++) {
-    const optionText = currentQuestion.options[i].text.trim().toLowerCase();
-    
-    // Exact match
-    if (optionText === normalizedCorrect) {
-      console.log(`✅ [Solo] Exact match found at index ${i}`);
-      return i;
-    }
-    
-    // Handle ellipsis and partial matches
-    const cleanOption = optionText.replace('...', '').trim();
-    const cleanCorrect = normalizedCorrect.replace('...', '').trim();
-    
-    if (cleanOption === cleanCorrect) {
-      console.log(`✅ [Solo] Clean match found at index ${i}`);
-      return i;
-    }
-    
-    // Contains match
-    if (optionText.includes(normalizedCorrect) || normalizedCorrect.includes(optionText)) {
-      console.log(`✅ [Solo] Contains match found at index ${i}`);
-      return i;
-    }
-  }
-
-  console.warn('❌ [Solo] No matching answer found in options');
-  return null;
-}
-private handleSoloAnswerValidation(data: any): void {
+  private handleSoloAnswerValidation(data: any): void {
   console.log('✅ [Solo] Answer validation received:', data);
   const { questionIndex, isCorrect, correctAnswer } = data;
   
   if (questionIndex === this.currentQuestionIndex) {
+    // Update correct answers count
+    if (isCorrect) {
+      this.correctAnswersCount++;
+    }
+    
     // Use the correct answer text from backend to find the index
     this.currentCorrectAnswerIndex = this.findSoloCorrectAnswerIndex(correctAnswer);
     
-    console.log(`🎯 [Solo] Validation: ${isCorrect ? 'CORRECT' : 'INCORRECT'}, Correct index: ${this.currentCorrectAnswerIndex}`);
+    console.log(`🎯 [Solo] Validation: ${isCorrect ? 'CORRECT' : 'INCORRECT'}, Correct index: ${this.currentCorrectAnswerIndex}, Total correct: ${this.correctAnswersCount}`);
     
     // Show feedback
     this.isAnswerCorrect = isCorrect;
@@ -470,25 +480,55 @@ private handleSoloAnswerValidation(data: any): void {
   }
 }
 
-  private showCorrectAnswerToEliminatedPlayer(): void {
-    if (!this.watchMode || !this.questions[this.currentQuestionIndex]) return;
+private showCorrectAnswerToEliminatedPlayer(): void {
+  if (!this.questions[this.currentQuestionIndex]) return;
 
-    console.log('👀 Watch mode: Showing correct answer to eliminated player');
-    
-    const currentQuestion = this.questions[this.currentQuestionIndex];
-    
-    if (currentQuestion && currentQuestion.options) {
-      const correctOption = currentQuestion.options.find(opt => opt.isCorrect);
-      if (correctOption) {
-        this.currentCorrectAnswerIndex = currentQuestion.options.indexOf(correctOption);
-        console.log(`✅ Watch mode: Correct answer is option ${this.currentCorrectAnswerIndex}`);
-      } else {
-        console.log('❌ Watch mode: Could not find correct answer in options');
+  console.log('👀 Showing correct answer for question', this.currentQuestionIndex);
+  
+  const currentQuestion = this.questions[this.currentQuestionIndex];
+  
+  // Try multiple ways to find the correct answer
+  if (currentQuestion && currentQuestion.options) {
+    // Method 1: Look for option with isCorrect = true
+    const correctOption = currentQuestion.options.find((opt: any) => opt.isCorrect === true);
+    if (correctOption) {
+      this.currentCorrectAnswerIndex = currentQuestion.options.indexOf(correctOption);
+      console.log(`✅ Found correct answer at index ${this.currentCorrectAnswerIndex}:`, correctOption.text);
+    } else {
+      console.log('❌ No option with isCorrect=true found');
+      
+      // Method 2: Check if sequential quiz state has the answer
+      if (this.sequentialQuizState?.currentQuestion?.options) {
+        const seqCorrectOption = this.sequentialQuizState.currentQuestion.options.find((opt: any) => opt.isCorrect === true);
+        if (seqCorrectOption) {
+          this.currentCorrectAnswerIndex = this.sequentialQuizState.currentQuestion.options.indexOf(seqCorrectOption);
+          console.log(`✅ Found correct answer in sequential state at index ${this.currentCorrectAnswerIndex}`);
+        }
+      }
+      
+      // Method 3: If still not found, use the first option as fallback (for testing)
+      if (this.currentCorrectAnswerIndex === null && currentQuestion.options.length > 0) {
+        this.currentCorrectAnswerIndex = 0; // Fallback to first option
+        console.log('⚠️ Using fallback - first option as correct answer');
       }
     }
+  }
+  
+  this.showAnswerFeedback = true;
+  this.cdr.detectChanges();
+}
+  private proceedToNextQuestion(): void {
+    console.log('🔄 Watch mode - proceeding to next question');
     
-    this.showAnswerFeedback = true;
-    this.cdr.detectChanges();
+    if (this.currentQuestionIndex < this.totalQuestionsCount - 1) {
+      // Request next question from server
+      this.quizService.requestNextQuestion(this.quizId);
+      this.loading = true;
+    } else {
+      console.log('🏁 Final question completed in watch mode');
+      this.loading = true;
+      // Wait for winner announcement from server
+    }
   }
 
   private handleNextQuestion(data: any): void {
@@ -497,6 +537,7 @@ private handleSoloAnswerValidation(data: any): void {
     const { question, questionIndex, totalQuestions, startTime } = data || {};
 
     console.log(`🔄 Processing sequential question ${questionIndex + 1} of ${totalQuestions}`);
+    console.log(`👀 Watch mode status: ${this.watchMode ? 'ACTIVE' : 'INACTIVE'}`);
 
     if (!question || typeof questionIndex !== 'number') {
       console.warn('handleNextQuestion: invalid payload', data);
@@ -520,8 +561,10 @@ private handleSoloAnswerValidation(data: any): void {
     this.showAnswerFeedback = false;
     this.currentCorrectAnswerIndex = null;
     this.answerSubmitted = false;
-    this.watchMode = false;
-
+    
+    // IMPORTANT: Keep watch mode if player was already eliminated
+    // Don't reset watchMode here - it should persist until quiz ends
+    
     console.log(`✅ Loaded sequential question ${questionIndex + 1}`);
 
     this.timeRemaining = this.questionTimeLimit;
@@ -532,42 +575,45 @@ private handleSoloAnswerValidation(data: any): void {
     this.cdr.detectChanges();
   }
 
-  private handleSequentialAnswerResult(data: any): void {
-    console.log('📥 [FRONTEND] Received answer result from server:', data);
+ private handleSequentialAnswerResult(data: any): void {
+  console.log('📥 [FRONTEND] Received answer result from server:', data);
 
-    const { questionIndex, isCorrect, correctAnswer, timeSpent, isFinalQuestion } = data || {};
+  const { questionIndex, isCorrect, correctAnswer, timeSpent, isFinalQuestion } = data || {};
 
-    if (questionIndex === this.currentQuestionIndex) {
-      console.log(`✅ [FRONTEND] Processing answer result for current question`);
+  if (questionIndex === this.currentQuestionIndex) {
+    console.log(`✅ [FRONTEND] Processing answer result for current question`);
+    
+    this.currentCorrectAnswerIndex = this.findCorrectAnswerIndex(correctAnswer);
+    
+    console.log(`📊 [FRONTEND] Server validation:`, {
+      isCorrect: isCorrect,
+      correctAnswerText: correctAnswer,
+      foundAtIndex: this.currentCorrectAnswerIndex
+    });
+
+    if (isCorrect === false && !this.watchMode) {
+      console.log('❌ [FRONTEND] Wrong answer - will eliminate when time expires');
       
-      this.currentCorrectAnswerIndex = this.findCorrectAnswerIndex(correctAnswer);
+      // Mark that the player answered incorrectly but DON'T eliminate immediately
+      // Just store the result and wait for timer to expire
+      this.answers[this.currentQuestionIndex] = this.selectedAnswer;
+      this.isAnswerCorrect = false;
       
-      console.log(`📊 [FRONTEND] Server validation:`, {
-        isCorrect: isCorrect,
-        correctAnswerText: correctAnswer,
-        foundAtIndex: this.currentCorrectAnswerIndex
-      });
-
-      if (isCorrect === false && !this.watchMode) {
-        console.log('❌ [FRONTEND] Wrong answer - immediate elimination');
-        this.eliminatePlayer('Wrong answer! You have been eliminated.');
-        this.showAnswerFeedback = true;
-        
-        if (this.currentCorrectAnswerIndex !== null) {
-          console.log(`👀 Eliminated player sees correct answer: option ${this.currentCorrectAnswerIndex}`);
-        }
-      } else if (isCorrect === true) {
-        console.log('✅ [FRONTEND] Correct answer - continuing in game');
-        this.answers[this.currentQuestionIndex] = this.selectedAnswer;
-        
-        if (isFinalQuestion) {
-          console.log('🎯 [FRONTEND] Final question answered correctly - waiting for winner announcement');
-        }
+      // The actual elimination will happen when handleTimeExpired() is called
+      // Player continues to see the question until time runs out
+    } else if (isCorrect === true) {
+      console.log('✅ [FRONTEND] Correct answer - continuing in game');
+      this.answers[this.currentQuestionIndex] = this.selectedAnswer;
+      this.isAnswerCorrect = true;
+      
+      if (isFinalQuestion) {
+        console.log('🎯 [FRONTEND] Final question answered correctly - waiting for winner announcement');
       }
-
-      this.cdr.detectChanges();
     }
+
+    this.cdr.detectChanges();
   }
+}
 
   private handleSequentialQuizFinished(): void {
     console.log('🏁 Sequential quiz finished');
@@ -588,41 +634,42 @@ private handleSoloAnswerValidation(data: any): void {
     });
   }
 
- private findCorrectAnswerIndex(correctAnswerText: string): number | null {
-  const currentQuestion = this.questions[this.currentQuestionIndex];
-  if (!currentQuestion?.options) {
-    console.warn('❌ [FRONTEND] No options available for current question');
-    return null;
-  }
-  
-  // Try exact match first
-  let index = currentQuestion.options.findIndex(opt => 
-    opt.text.trim() === correctAnswerText.trim()
-  );
-  
-  // If not found, try case-insensitive match
-  if (index === -1) {
-    index = currentQuestion.options.findIndex(opt => 
-      opt.text.trim().toLowerCase() === correctAnswerText.trim().toLowerCase()
+  private findCorrectAnswerIndex(correctAnswerText: string): number | null {
+    const currentQuestion = this.questions[this.currentQuestionIndex];
+    if (!currentQuestion?.options) {
+      console.warn('❌ [FRONTEND] No options available for current question');
+      return null;
+    }
+    
+    // Try exact match first
+    let index = currentQuestion.options.findIndex(opt => 
+      opt.text.trim() === correctAnswerText.trim()
     );
+    
+    // If not found, try case-insensitive match
+    if (index === -1) {
+      index = currentQuestion.options.findIndex(opt => 
+        opt.text.trim().toLowerCase() === correctAnswerText.trim().toLowerCase()
+      );
+    }
+    
+    // If still not found, try partial match
+    if (index === -1) {
+      index = currentQuestion.options.findIndex(opt => 
+        opt.text.trim().includes(correctAnswerText.trim()) || 
+        correctAnswerText.trim().includes(opt.text.trim())
+      );
+    }
+    
+    console.log(`🔍 [FRONTEND] Correct answer search:`, {
+      correctAnswerText,
+      options: currentQuestion.options.map(opt => opt.text),
+      foundAtIndex: index
+    });
+    
+    return index !== -1 ? index : null;
   }
-  
-  // If still not found, try partial match
-  if (index === -1) {
-    index = currentQuestion.options.findIndex(opt => 
-      opt.text.trim().includes(correctAnswerText.trim()) || 
-      correctAnswerText.trim().includes(opt.text.trim())
-    );
-  }
-  
-  console.log(`🔍 [FRONTEND] Correct answer search:`, {
-    correctAnswerText,
-    options: currentQuestion.options.map(opt => opt.text),
-    foundAtIndex: index
-  });
-  
-  return index !== -1 ? index : null;
-}
+
   private startQuiz(mode: 'solo' | 'online' = 'solo'): void {
     this.mode = mode;
     this.loading = true;
@@ -653,37 +700,37 @@ private handleSoloAnswerValidation(data: any): void {
     }
   }
 
- private startSoloQuizFlow(): void {
-  console.log('🎯 Starting solo quiz flow via WebSocket');
-  this.quizId = `solo-quiz-${Date.now()}`;
-  
-  // Clear any previous online state
-  this.sequentialQuizState = null;
-  this.players = [];
-  this.watchMode = false;
-  
-  this.quizService.getSoloQuestions(10).subscribe({
-    next: (questions: Question[]) => {
-      console.log('✅ Solo questions received via WebSocket:', questions?.length);
-      if (questions && questions.length > 0) {
-        this.questions = questions;
-        this.answers = new Array(questions.length).fill(null);
-        this.totalTime = 0;
-        this.timeRemaining = 0; // No timer in solo mode
-        this.loading = false;
-        this.quizStarted = true;
-        console.log(`✅ Solo quiz started with ${questions.length} questions`);
-      } else {
-        this.handleQuizError('No questions received for solo mode');
+  private startSoloQuizFlow(): void {
+    console.log('🎯 Starting solo quiz flow via WebSocket');
+    this.quizId = `solo-quiz-${Date.now()}`;
+    
+    // Clear any previous online state
+    this.sequentialQuizState = null;
+    this.players = [];
+    this.watchMode = false;
+    
+    this.quizService.getSoloQuestions(10).subscribe({
+      next: (questions: Question[]) => {
+        console.log('✅ Solo questions received via WebSocket:', questions?.length);
+        if (questions && questions.length > 0) {
+          this.questions = questions;
+          this.answers = new Array(questions.length).fill(null);
+          this.totalTime = 0;
+          this.timeRemaining = 0; // No timer in solo mode
+          this.loading = false;
+          this.quizStarted = true;
+          console.log(`✅ Solo quiz started with ${questions.length} questions`);
+        } else {
+          this.handleQuizError('No questions received for solo mode');
+        }
+        this.cdr.detectChanges();
+      },
+      error: (error: any) => {
+        console.error('❌ Solo quiz start failed:', error);
+        this.handleQuizError('Failed to load solo questions: ' + error.message);
       }
-      this.cdr.detectChanges();
-    },
-    error: (error: any) => {
-      console.error('❌ Solo quiz start failed:', error);
-      this.handleQuizError('Failed to load solo questions: ' + error.message);
-    }
-  });
-}
+    });
+  }
 
   private startSequentialQuizFlow(): void {
     if (this.mode !== 'online') return;
@@ -695,53 +742,86 @@ private handleSoloAnswerValidation(data: any): void {
     this.loading = true;
   }
 
-  private eliminatePlayer(reason: string): void {
-    if (this.watchMode) return;
+private eliminatePlayer(reason: string): void {
+  if (this.watchMode) return;
 
-    this.watchMode = true;
-    this.error = reason;
+  this.watchMode = true;
+  this.error = reason;
 
-    console.log(`❌ Player eliminated: ${reason}`);
+  console.log(`❌ Player eliminated: ${reason}`);
+  console.log(`👀 Player now in watch mode - can only observe, not participate`);
 
-    if (this.currentCorrectAnswerIndex !== null) {
-      console.log(`👀 Eliminated player sees correct answer: option ${this.currentCorrectAnswerIndex}`);
-      this.showAnswerFeedback = true;
-    }
-
-    this.cdr.detectChanges();
+  // Show watch mode immediately
+  this.cdr.detectChanges();
+}
+ private startTimer(duration: number): void {
+  this.stopTimer();
+  
+  if (this.mode === 'online') {
+    this.timeRemaining = duration;
+  } else {
+    this.timeRemaining = 0;
+    return;
   }
 
-  private startTimer(duration: number): void {
-    this.stopTimer();
-    
-    if (this.mode === 'online') {
-      this.timeRemaining = duration;
-    } else {
-      this.timeRemaining = 0;
+  this.timerSubscription = interval(1000).subscribe(() => {
+    if (this.gameOver || this.quizFinished) {
       return;
     }
 
-    this.timerSubscription = interval(1000).subscribe(() => {
-      if (this.gameOver || this.quizFinished || this.showAnswerFeedback) {
-        return;
+    if (this.mode === 'online') {
+      this.timeRemaining--;
+
+      if (this.timeRemaining <= 0) {
+        this.stopTimer();
+        console.log('⏰ Time expired for question', this.currentQuestionIndex);
+        
+        // Handle time expiry for all cases
+        this.handleTimeExpired();
       }
+    }
 
-      if (this.mode === 'online') {
-        this.timeRemaining--;
+    this.updateProgress();
+    this.cdr.detectChanges();
+  });
+}
 
-        if (this.timeRemaining <= 0) {
-          this.stopTimer();
-          if (!this.answerSubmitted && !this.watchMode) {
-            console.log('⏰ Time expired without answer - eliminating player');
-            this.eliminatePlayer('Time expired! You have been eliminated.');
-          }
-        }
+private handleTimeExpired(): void {
+  console.log('⏰ Handling time expiry for question', this.currentQuestionIndex);
+  
+  if (this.watchMode) {
+    // Watch mode - show correct answer immediately
+    console.log('👀 Watch mode - time expired, showing correct answer');
+    this.showCorrectAnswerToEliminatedPlayer();
+    
+    // Auto-proceed after delay
+    setTimeout(() => {
+      if (this.isFinalQuestion) {
+        console.log('🏁 Final question in watch mode - waiting for winner');
+        this.loading = true;
+      } else {
+        this.proceedToNextQuestion();
       }
-
-      this.updateProgress();
-      this.cdr.detectChanges();
-    });
+    }, 3000);
+  } else if (this.isAnswerCorrect === false) {
+    // Wrong answer was submitted - NOW eliminate the player
+    console.log('❌ Wrong answer - eliminating player after time expiry');
+    this.eliminatePlayer('Wrong answer! You have been eliminated.');
+    this.showCorrectAnswerToEliminatedPlayer();
+  } else if (!this.answerSubmitted) {
+    // No answer submitted - eliminate player
+    console.log('⏰ No answer submitted - eliminating player');
+    this.eliminatePlayer('Time expired! You have been eliminated.');
+    this.showCorrectAnswerToEliminatedPlayer();
+  } else {
+    // Regular case - correct answer submitted
+    console.log('✅ Time expired with correct answer');
+    this.showAnswerFeedback = true;
   }
+  
+  this.cdr.detectChanges();
+}
+
 
   private stopTimer(): void {
     try {
@@ -766,6 +846,12 @@ private handleSoloAnswerValidation(data: any): void {
   }
 
   selectAnswer(index: number): void {
+    // Prevent answering in watch mode
+    if (this.watchMode) {
+      console.log('👀 Watch mode - cannot answer, only observe');
+      return;
+    }
+
     if (this.mode === 'solo') {
       if (this.showAnswerFeedback || this.answerSubmitted) {
         return;
@@ -796,24 +882,25 @@ private handleSoloAnswerValidation(data: any): void {
     this.cdr.detectChanges();
   }
 
-private submitSoloAnswerForValidation(answerIndex: number): void {
-  console.log(`🎯 [Solo] Submitting answer for validation: ${answerIndex}`);
-  const timeSpent = Math.max(0.1, (Date.now() - this.questionStartTime) / 1000);
-  
-  this.quizService.submitSoloAnswer(
-    this.quizId,
-    this.currentQuestionIndex,
-    answerIndex,
-    timeSpent
-  );
-  
-  // Show loading state while waiting for validation
-  this.loading = true;
-}
+  private submitSoloAnswerForValidation(answerIndex: number): void {
+    console.log(`🎯 [Solo] Submitting answer for validation: ${answerIndex}`);
+    const timeSpent = Math.max(0.1, (Date.now() - this.questionStartTime) / 1000);
+    
+    this.quizService.submitSoloAnswer(
+      this.quizId,
+      this.currentQuestionIndex,
+      answerIndex,
+      timeSpent
+    );
+    
+    // Show loading state while waiting for validation
+    this.loading = true;
+  }
 
   private submitOnlineAnswer(answerIndex: number): void {
+    // Prevent any answering in watch mode
     if (this.watchMode) {
-      console.log('👀 Watch mode - cannot answer');
+      console.log('👀 Watch mode - cannot answer, only observe');
       return;
     }
     
@@ -968,46 +1055,43 @@ private submitSoloAnswerForValidation(answerIndex: number): void {
     this.cdr.detectChanges();
   }
 
-  private calculateLocalScore(timeSpent: number): Observable<QuizResult> {
-    return new Observable((observer) => {
-      try {
-        const total = this.questions?.length || 0;
+private calculateLocalScore(timeSpent: number): Observable<QuizResult> {
+  return new Observable((observer) => {
+    try {
+      const total = this.questions?.length || 0;
+      
+      if (this.mode === 'solo' && this.isAuthenticated && this.currentUserId) {
+        // Use the tracked correct answers count
+        const correctAnswers = this.correctAnswersCount;
+        const score = total ? Math.round((correctAnswers / total) * 100) : 0;
         
-        if (this.mode === 'solo' && this.isAuthenticated && this.currentUserId) {
-          const correctAnswers = this.answers.filter((answer, index) => {
-            if (answer === null || answer === undefined) return false;
-            const correctIndex = this.questions[index].options.findIndex(opt => opt.isCorrect);
-            return answer === correctIndex;
-          }).length;
-          
-          const score = Math.round((correctAnswers / total) * 100);
-          
-          const soloScore: QuizResult = {
-            _id: `solo-${Date.now()}`,
-            userId: this.currentUserId,
-            score: score,
-            correctAnswers: correctAnswers,
-            totalQuestions: total,
-            timeSpent: timeSpent,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          };
-          
-          observer.next(soloScore);
-          observer.complete();
-        } else {
-          const basicScore = this.calculateBasicScore(total, timeSpent);
-          observer.next(basicScore);
-          observer.complete();
-        }
-      } catch (err) {
-        console.error('Error in calculateLocalScore:', err);
-        const basicScore = this.calculateBasicScore(this.questions?.length || 0, timeSpent);
+        const soloScore: QuizResult = {
+          _id: `solo-${Date.now()}`,
+          userId: this.currentUserId,
+          score: score,
+          correctAnswers: correctAnswers,
+          totalQuestions: total,
+          timeSpent: timeSpent,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        
+        console.log(`📊 Solo score calculated: ${correctAnswers}/${total} = ${score}%`);
+        observer.next(soloScore);
+        observer.complete();
+      } else {
+        const basicScore = this.calculateBasicScore(total, timeSpent);
         observer.next(basicScore);
         observer.complete();
       }
-    });
-  }
+    } catch (err) {
+      console.error('Error in calculateLocalScore:', err);
+      const basicScore = this.calculateBasicScore(this.questions?.length || 0, timeSpent);
+      observer.next(basicScore);
+      observer.complete();
+    }
+  });
+}
 
   private calculateBasicScore(total: number, timeSpent: number): QuizResult {
     const answeredCount = this.answers?.filter(a => a !== null && a !== -1).length || 0;

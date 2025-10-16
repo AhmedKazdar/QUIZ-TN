@@ -172,10 +172,41 @@
 <!-- Active Quiz Section -->
 <div class="quiz-container" *ngIf="quizStarted && !quizFinished && !gameOver">
   <div class="quiz-card">
+    
+    <!-- WATCH MODE BANNER -->
+    <div *ngIf="watchMode" class="watch-mode-banner alert alert-warning mb-3">
+      <div class="d-flex align-items-center justify-content-between">
+        <div class="d-flex align-items-center">
+          <i class="bi bi-eye-fill me-2 fs-5"></i>
+          <div>
+            <h5 class="mb-1">👀 Watch Mode Activated</h5>
+            <p class="mb-0">You've been eliminated. You can watch the quiz but cannot participate.</p>
+          </div>
+        </div>
+        <div class="watch-mode-badge">
+          <span class="badge bg-warning text-dark">SPECTATOR</span>
+        </div>
+      </div>
+    </div>
+    
+    <!-- IMMEDIATE ELIMINATION FEEDBACK - NEW SECTION -->
+   <!--  <div *ngIf="watchMode && timeRemaining > 0" class="alert alert-danger mb-3" role="alert">
+      <div class="d-flex align-items-center">
+        <i class="bi bi-x-circle-fill me-2"></i>
+        <div>
+          <h5 class="alert-heading mb-1">You've Been Eliminated!</h5>
+          <p class="mb-0">{{ eliminationMessage }}</p>
+          <p class="mb-0 mt-1"><small>Waiting for time to expire to see the correct answer...</small></p>
+        </div>
+      </div>
+    </div> -->
+    
     <div class="d-flex justify-content-between align-items-center mb-3">
       <h2 class="mb-0">
         <span *ngIf="mode === 'solo'">Solo Quiz</span>
         <span *ngIf="mode === 'online'">Online Quiz</span>
+        <!-- Watch mode indicator in title -->
+        <span *ngIf="watchMode" class="ms-2 badge bg-warning text-dark fs-6">Watch Mode</span>
       </h2>
     </div>
     
@@ -192,20 +223,27 @@
         </div>
         <div class="question-counter">
           Question {{ currentQuestionIndex + 1 }} of {{ totalQuestionsCount }}
+          <!-- Watch mode indicator in progress -->
+          <span *ngIf="watchMode" class="ms-2 badge bg-warning text-dark fs-7">Spectator</span>
         </div>
       </div>
       <div class="d-flex align-items-center">
         <!-- Timer for online mode ONLY -->
         <div class="quiz-timer me-3" *ngIf="mode === 'online'" [ngClass]="{
           'text-warning': timeRemaining <= 15 && timeRemaining > 5,
-          'text-danger': timeRemaining <= 5
+          'text-danger': timeRemaining <= 5,
+          'watch-mode-timer': watchMode
         }">
           <i class="bi bi-clock-history me-1"></i>
           Q{{ currentQuestionIndex + 1 }}: {{ timeRemaining | number:'2.0-0' }}s
+          <!-- Watch mode indicator in timer -->
+          <span *ngIf="watchMode" class="ms-1 badge bg-warning text-dark fs-7">👀</span>
         </div>
         
         <div class="quiz-mode-badge" [ngClass]="mode === 'solo' ? 'solo' : 'online'">
           {{ mode === 'solo' ? 'Solo Mode' : 'Online Mode' }}
+          <!-- Watch mode indicator in mode badge -->
+          <span *ngIf="watchMode" class="ms-1">• Spectator</span>
         </div>
       </div>
     </div>
@@ -213,66 +251,110 @@
     <div class="question-container" *ngIf="questions[currentQuestionIndex]">
       <!-- Online Mode Only Elements -->
       <div *ngIf="mode === 'online'">
-        <!-- Final Question Warning -->
+        
+        <!-- FINAL QUESTION WARNING -->
         <div class="alert alert-warning" *ngIf="isFinalQuestion" role="alert">
           <div class="d-flex align-items-center">
             <i class="bi bi-exclamation-triangle-fill me-2"></i>
             <div>
-              <h5 class="alert-heading mb-1">Final Question!</h5>
-              <p class="mb-0">First correct answer wins the entire game! Be quick!</p>
+              <h5 class="alert-heading mb-1" *ngIf="!watchMode">Final Question!</h5>
+              <h5 class="alert-heading mb-1" *ngIf="watchMode">Final Question - Winner Announcement Soon!</h5>
+              <p class="mb-0" *ngIf="!watchMode">First correct answer wins the entire game! Be quick!</p>
+              <p class="mb-0" *ngIf="watchMode">Waiting to see who answers first and wins the game!</p>
             </div>
           </div>
         </div>
 
-        <!-- Quiz Status Information -->
+        <!-- QUIZ STATUS INFORMATION -->
         <div class="quiz-status-info">
-          <div class="status-item" *ngIf="watchMode">
-            <i class="bi bi-eye-fill text-info"></i>
-            <span>Watch Mode</span>
+          <!-- Enhanced Watch Mode Status -->
+          <div class="status-item watch-mode-status" *ngIf="watchMode">
+            <i class="bi bi-eye-fill text-warning"></i>
+            <span>Watch Mode - Spectating</span>
           </div>
-          <div class="status-item" *ngIf="timeRemaining <= 5 && timeRemaining > 0">
+          
+          <!-- Wrong Answer Waiting for Time Expiry -->
+
+        <!--   <div class="status-item" *ngIf="isAnswerCorrect === false && !watchMode && timeRemaining > 0">
+            <i class="bi bi-hourglass text-danger"></i>
+            <span>Wrong Answer - Waiting for time to expire</span>
+          </div> -->
+          
+          <!-- Time Expired - Showing Answer -->
+          <div class="status-item" *ngIf="watchMode && timeRemaining <= 0 && showAnswerFeedback">
+            <i class="bi bi-lightbulb-fill text-success"></i>
+            <span>Showing Correct Answer</span>
+          </div>
+          
+          <!-- Proceeding to Next Question -->
+          <div class="status-item" *ngIf="watchMode && loading && !isFinalQuestion">
+            <i class="bi bi-arrow-right-circle text-info"></i>
+            <span>Proceeding to Next Question...</span>
+          </div>
+          
+          <!-- Waiting for Winner -->
+          <div class="status-item" *ngIf="watchMode && loading && isFinalQuestion">
+            <i class="bi bi-trophy text-warning"></i>
+            <span>Determining Winner...</span>
+          </div>
+          
+          <div class="status-item" *ngIf="timeRemaining <= 5 && timeRemaining > 0 && !watchMode">
             <i class="bi bi-clock text-danger"></i>
             <span>Time almost up!</span>
           </div>
-          <div class="status-item" *ngIf="answerSubmitted && timeRemaining > 0">
+          
+          <div class="status-item" *ngIf="answerSubmitted && timeRemaining > 0 && !watchMode && isAnswerCorrect !== false">
             <i class="bi bi-check-circle text-success"></i>
             <span>Answer Submitted</span>
           </div>
-          <div class="status-item" *ngIf="isFinalQuestion">
-            <i class="bi bi-trophy text-warning"></i>
-            <span>Final Question - Winner Takes All!</span>
-          </div>
         </div>
 
-        <!-- Watch mode message -->
-        <div class="alert alert-warning" *ngIf="watchMode" role="alert">
+        <!-- WRONG ANSWER WAITING MESSAGE -->
+      <!--   <div *ngIf="isAnswerCorrect === false && !watchMode && timeRemaining > 0" class="alert alert-danger" role="alert">
           <div class="d-flex align-items-center">
-            <i class="bi bi-eye-fill me-2"></i>
+            <i class="bi bi-hourglass-top me-2"></i>
             <div>
-              <h5 class="alert-heading mb-1">Watch Mode Activated</h5>
-              <p class="mb-0">You've been eliminated. You can continue watching the quiz but can no longer participate.</p>
+              <h5 class="alert-heading mb-1">Wrong Answer!</h5>
+              <p class="mb-0">You will be eliminated when the time expires. The correct answer will be revealed then.</p>
+            </div>
+          </div>
+        </div>
+ -->
+        <!-- WATCH MODE TIME EXPIRED MESSAGE -->
+        <div class="alert alert-info" *ngIf="watchMode && timeRemaining <= 0 && showAnswerFeedback" role="alert">
+          <div class="d-flex align-items-center">
+            <i class="bi bi-lightbulb-fill me-2"></i>
+            <div>
+              <h5 class="alert-heading mb-1">Correct Answer Revealed</h5>
+              <p class="mb-0" *ngIf="!isFinalQuestion">
+                Proceeding to next question in 2 seconds...
+              </p>
+              <p class="mb-0" *ngIf="isFinalQuestion">
+                Final question completed! Waiting for winner announcement...
+              </p>
             </div>
           </div>
         </div>
 
-        <!-- Time's up and progression messages -->
-        <div *ngIf="showAnswerFeedback && !isFinalQuestion" class="alert alert-info">
-          <div class="d-flex align-items-center">
-            <i class="bi bi-clock-history me-2"></i>
-            <div>
-              <h5 class="alert-heading mb-1">Advancing to next question...</h5>
-              <p class="mb-0">Next question starting shortly.</p>
+        <!-- REGULAR PLAYER MESSAGES -->
+        <div *ngIf="!watchMode && isAnswerCorrect !== false">
+          <div *ngIf="showAnswerFeedback && !isFinalQuestion" class="alert alert-info">
+            <div class="d-flex align-items-center">
+              <i class="bi bi-clock-history me-2"></i>
+              <div>
+                <h5 class="alert-heading mb-1">Advancing to next question...</h5>
+                <p class="mb-0">Next question starting shortly.</p>
+              </div>
             </div>
           </div>
-        </div>
 
-        <!-- Final question completion message -->
-        <div class="alert alert-info" *ngIf="timeRemaining <= 0 && isFinalQuestion && !quizFinished" role="alert">
-          <div class="d-flex align-items-center">
-            <i class="bi bi-clock-fill me-2"></i>
-            <div>
-              <h5 class="alert-heading mb-1">Time's Up! Determining Winner...</h5>
-              <p class="mb-0">Waiting for fastest correct answer...</p>
+          <div class="alert alert-info" *ngIf="timeRemaining <= 0 && isFinalQuestion && !quizFinished" role="alert">
+            <div class="d-flex align-items-center">
+              <i class="bi bi-clock-fill me-2"></i>
+              <div>
+                <h5 class="alert-heading mb-1">Time's Up! Determining Winner...</h5>
+                <p class="mb-0">Waiting for fastest correct answer...</p>
+              </div>
             </div>
           </div>
         </div>
@@ -281,13 +363,14 @@
       <h3 class="question-text">{{ questions[currentQuestionIndex].question }}</h3>
       
       <!-- OPTIONS CONTAINER -->
-      <div class="options-container">
+      <div class="options-container" [class.watch-mode-container]="watchMode">
         <div *ngFor="let option of questions[currentQuestionIndex].options; let i = index" 
              class="option" 
              [class.selected]="selectedAnswer === i"
              [class.correct]="showAnswerFeedback && currentCorrectAnswerIndex === i"
              [class.incorrect]="showAnswerFeedback && selectedAnswer === i && currentCorrectAnswerIndex !== i"
-             [class.watch-mode-correct]="mode === 'online' && watchMode && showAnswerFeedback && currentCorrectAnswerIndex === i"
+             [class.watch-mode-correct]="watchMode && showAnswerFeedback && currentCorrectAnswerIndex === i"
+             [class.watch-mode-option]="watchMode"
              [class.disabled]="(mode === 'online' && (watchMode || timeRemaining <= 0)) || (mode === 'solo' && answerSubmitted)"
              (click)="selectAnswer(i)">
           
@@ -304,21 +387,31 @@
           
           <!-- Online mode specific overlays -->
           <div *ngIf="mode === 'online'">
+            <!-- Watch Mode Correct Answer Indicator -->
             <div class="watch-mode-correct-indicator" 
                  *ngIf="watchMode && showAnswerFeedback && currentCorrectAnswerIndex === i">
               <i class="bi bi-star-fill"></i>
               <span>Correct Answer</span>
             </div>
 
+            <!-- Watch Mode Overlay - Shows when in watch mode and time is still running -->
             <div class="watch-mode-overlay" *ngIf="watchMode && timeRemaining > 0 && !showAnswerFeedback">
               <i class="bi bi-eye"></i>
-              <span>View Only</span>
+              <span>View Only - Cannot Answer</span>
             </div>
 
-            <div class="time-expired-overlay" *ngIf="timeRemaining <= 0 && !showAnswerFeedback">
+            <!-- Time Expired Overlay -->
+            <div class="time-expired-overlay" *ngIf="timeRemaining <= 0 && !showAnswerFeedback && !watchMode">
               <i class="bi bi-hourglass-split"></i>
               <span>Time's Up!</span>
             </div>
+
+            <!-- Watch Mode Time Expired - Shows correct answer -->
+
+           <!--  <div class="watch-mode-time-expired" *ngIf="watchMode && timeRemaining <= 0 && showAnswerFeedback && currentCorrectAnswerIndex === i">
+              <i class="bi bi-lightbulb-fill"></i>
+              <span>Correct Answer</span>
+            </div> -->
           </div>
         </div>
       </div>
@@ -334,13 +427,33 @@
       </div>
 
       <!-- Correct answer message for both modes -->
-      <div *ngIf="showAnswerFeedback && currentCorrectAnswerIndex !== null && questions[currentQuestionIndex]" class="correct-answer-message">
-        <p *ngIf="selectedAnswer !== currentCorrectAnswerIndex">
-          Correct answer: {{ getLetter(currentCorrectAnswerIndex) }}. {{ questions[currentQuestionIndex].options[currentCorrectAnswerIndex]?.text }}
-        </p>
-        <p *ngIf="selectedAnswer === currentCorrectAnswerIndex" class="text-success">
-          ✅ Correct! Well done!
-        </p>
+      <div *ngIf="showAnswerFeedback && currentCorrectAnswerIndex !== null && questions[currentQuestionIndex]" 
+           class="correct-answer-message alert alert-success">
+        <div class="d-flex align-items-center">
+          <i class="bi bi-lightbulb-fill me-2"></i>
+          <div>
+            <h5 class="alert-heading mb-1">Correct Answer</h5>
+            <p class="mb-0">
+              <strong>{{ getLetter(currentCorrectAnswerIndex) }}. {{ questions[currentQuestionIndex].options[currentCorrectAnswerIndex]?.text }}</strong>
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Watch Mode Progression Info -->
+      <div *ngIf="watchMode && showAnswerFeedback && !isFinalQuestion" class="watch-mode-progression alert alert-light mt-3">
+        <div class="d-flex align-items-center justify-content-center">
+          <i class="bi bi-arrow-right-circle me-2 text-info"></i>
+          <span>Automatically advancing to next question...</span>
+        </div>
+      </div>
+
+      <!-- Final Question Winner Waiting -->
+      <div *ngIf="watchMode && isFinalQuestion && timeRemaining <= 0" class="alert alert-warning mt-3">
+        <div class="d-flex align-items-center justify-content-center">
+          <i class="bi bi-trophy me-2 text-warning"></i>
+          <span>Final question completed! The winner will be announced shortly...</span>
+        </div>
       </div>
     </div>
 
@@ -349,8 +462,10 @@
       <div class="spinner-border" role="status">
         <span class="visually-hidden">Loading...</span>
       </div>
-      <h4 *ngIf="isFinalQuestion && timeRemaining <= 0">Determining winner...</h4>
-      <h4 *ngIf="!isFinalQuestion">Loading next question...</h4>
+      <h4 *ngIf="isFinalQuestion && timeRemaining <= 0 && !watchMode">Determining winner...</h4>
+      <h4 *ngIf="isFinalQuestion && timeRemaining <= 0 && watchMode">Waiting for winner announcement...</h4>
+      <h4 *ngIf="!isFinalQuestion && !watchMode">Loading next question...</h4>
+      <h4 *ngIf="!isFinalQuestion && watchMode">Preparing next question for viewing...</h4>
     </div>
   </div>
 </div>
