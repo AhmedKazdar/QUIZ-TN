@@ -245,9 +245,15 @@ leaveQuizSession(quizId: string): Observable<any> {
 
   // ========== SEQUENTIAL QUIZ METHODS ==========
 
+  // Add similar checks to all your WebSocket methods
   startSequentialQuiz(quizId: string, questionCount: number): void {
+    if (!this.socketService.isConnected()) {
+      console.error('❌ Cannot start sequential quiz - WebSocket not connected');
+      return;
+    }
     this.socketService.emitStartSequentialQuiz(quizId, questionCount);
   }
+
 
   joinSequentialQuiz(quizId: string): void {
     this.socketService.emitJoinSequentialQuiz(quizId);
@@ -405,31 +411,26 @@ submitSoloAnswer(quizId: string, questionIndex: number, answerIndex: number, tim
   this.socketService.emitSubmitSoloAnswer(quizId, questionIndex, answerIndex, timeSpent);
 }
 
-getSoloQuestions(count: number): Observable<Question[]> {
-  return new Observable((observer) => {
-    console.log(`🎯 [Solo] Requesting ${count} questions via WebSocket`);
-    
-    this.waitForSocketReady().pipe(
-      timeout(10000),
-      catchError((error: any) => {
-        console.error('❌ Timeout waiting for socket for solo questions:', error);
-        return throwError(() => new Error('WebSocket connection timeout for solo mode'));
-      })
-    ).subscribe({
-      next: (ready) => {
-        if (ready) {
-          console.log(`🎯 WebSocket ready, requesting ${count} solo questions`);
-          this.requestSoloQuestionsViaSocket(count, observer);
-        } else {
-          observer.error(new Error('WebSocket not available for solo mode'));
-        }
-      },
-      error: (error) => {
-        observer.error(error);
+  getSoloQuestions(count: number): Observable<Question[]> {
+    return new Observable(observer => {
+      // Check connection first
+      if (!this.socketService.isConnected()) {
+        observer.error('WebSocket not connected');
+        return;
       }
+
+      const subscription = this.socketService.onSoloQuestionsLoaded().subscribe((data: any) => {
+        if (data?.questions) {
+          observer.next(data.questions);
+          observer.complete();
+          subscription.unsubscribe();
+        }
+      });
+
+      this.socketService.emitGetSoloQuestions(count);
     });
-  });
-}
+  }
+
 
 
   private waitForSocketReady(): Observable<boolean> {

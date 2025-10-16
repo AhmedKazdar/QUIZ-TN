@@ -1,4 +1,3 @@
-// socket.service.ts - FIXED VERSION
 import { Injectable, OnDestroy } from '@angular/core';
 import { io, Socket } from 'socket.io-client';
 import { BehaviorSubject, Observable, Subject, Subscription } from 'rxjs';
@@ -27,9 +26,20 @@ export class SocketService implements OnDestroy {
   private socket: Socket | null = null;
   private onlineUsers: OnlineUser[] = [];
 
+  // Connection state management
+  private isInitialized = false;
+  private initializationInProgress = false;
+  private connectionPromise: Promise<boolean> | null = null;
+  private connectionInProgress = false;
+  private shouldReconnect = true;
+  private isPageReload = false;
+  private reloadDetectionCompleted = false;
+
   // Online Users Subjects
   private onlineUsersSubject = new BehaviorSubject<OnlineUser[]>([]);
   private connectionStatus$ = new BehaviorSubject<boolean>(false);
+  private connectionReadySubject = new BehaviorSubject<boolean>(false);
+  public connectionReady$ = this.connectionReadySubject.asObservable();
 
   // Authentication Subjects
   private authenticationSuccessSubject = new Subject<any>();
@@ -90,104 +100,394 @@ export class SocketService implements OnDestroy {
   private connectionTimeout: any = null;
   private isManualDisconnect = false;
 
-  constructor(private authService: AuthService) {
-    this.initializeConnection();
+    constructor(private authService: AuthService) {
+    console.log('[SocketService] 🔌 SocketService constructed');
+    
+    // Improved page reload detection
+    this.detectPageReload();
+    
+    // Listen for page unload to prevent reconnection
+    if (typeof window !== 'undefined') {
+      window.addEventListener('beforeunload', () => {
+        console.log('[SocketService] 📄 Page unloading - marking as reload');
+        this.isPageReload = true;
+        this.shouldReconnect = true;
+        this.isManualDisconnect = false;
+        
+        // Store connection state for reload
+        if (this.socket?.connected) {
+          sessionStorage.setItem('socketWasConnected', 'true');
+          sessionStorage.setItem('socketId', this.socket.id || '');
+        }
+      });
+
+      // Listen for page load completion
+      window.addEventListener('load', () => {
+        console.log('[SocketService] 📄 Page load complete');
+        this.reloadDetectionCompleted = true;
+        
+        // Clear reload markers after a short time
+        setTimeout(() => {
+          sessionStorage.removeItem('socketWasConnected');
+          sessionStorage.removeItem('socketId');
+          this.isPageReload = false;
+        }, 2000);
+      });
+    }
   }
 
-  ngOnDestroy(): void {
-    this.isManualDisconnect = true;
-    this.disconnect();
+  private detectPageReload(): void {
+    if (typeof window !== 'undefined') {
+      const navigationEntry = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming;
+      const wasReloaded = navigationEntry?.type === 'reload';
+      
+      if (wasReloaded || sessionStorage.getItem('isReloading') === 'true') {
+        console.log('[SocketService] 🔄 Page reload detected');
+        this.isPageReload = true;
+        
+        // Check if we had a previous connection
+        const socketWasConnected = sessionStorage.getItem('socketWasConnected') === 'true';
+        if (socketWasConnected) {
+          console.log('[SocketService] 🔌 Previous socket connection detected, attempting to maintain');
+        }
+      }
+      
+      // Set for next reload detection
+      sessionStorage.setItem('isReloading', 'true');
+      
+      // Clear the reload marker after a short time
+      setTimeout(() => {
+        if (sessionStorage.getItem('isReloading') === 'true') {
+          sessionStorage.removeItem('isReloading');
+        }
+      }, 1000);
+    }
+  }
+
+ngOnDestroy(): void {
+    // Only fully disconnect if this is not a page reload
+    if (!this.isPageReload) {
+      console.log('[SocketService] 🔌 Normal destruction - disconnecting');
+      this.isManualDisconnect = true;
+      this.disconnect();
+    } else {
+      console.log('[SocketService] 🔄 Page reload - preserving connection state');
+      // Don't disconnect during reloads
+    }
+    
     this.subscriptions.forEach(s => s.unsubscribe());
   }
 
-  private initializeConnection(): void {
-    console.log('[SocketService] 🔌 Initializing WebSocket connection');
-    
-    const authSub = this.authService.currentUser.subscribe(user => {
-      if (user) {
-        console.log('[SocketService] 🔑 User authenticated, attempting connection');
-        this.connect();
-      } else {
-        console.log('[SocketService] ⚠️ No authenticated user, delaying connection');
-        this.disconnect();
+  public async initializeService(): Promise<boolean> {
+    // If we're in a page reload scenario and already have a connection, use it
+    if (this.isPageReload && this.isConnected()) {
+      console.log('[SocketService] 🔄 Page reload - reusing existing connection');
+      this.connectionReadySubject.next(true);
+      this.connectionStatus$.next(true);
+      return Promise.resolve(true);
+    }
+
+    if (this.connectionInProgress) {
+      console.log('[SocketService] 🔄 Initialization already in progress');
+      return this.connectionPromise!;
+    }
+
+    if (this.isConnected()) {
+      console.log('[SocketService] ✅ Already connected');
+      return Promise.resolve(true);
+    }
+
+    console.log('[SocketService] 🚀 Starting WebSocket initialization');
+    this.connectionInProgress = true;
+    this.initializationInProgress = true;
+
+    this.connectionPromise = new Promise<boolean>(async (resolve) => {
+      try {
+        await this.initializeConnection();
+        
+        const connected = await this.waitForConnectionWithTimeout(10000); // Reduced timeout
+        
+        if (connected) {
+          console.log('[SocketService] ✅ WebSocket connection established');
+          this.isInitialized = true;
+          this.isPageReload = false; // Reset reload flag after successful connection
+          resolve(true);
+        } else {
+          console.error('[SocketService] ❌ WebSocket connection failed - timeout');
+          this.isInitialized = false;
+          this.connectionInProgress = false;
+          resolve(false);
+        }
+      } catch (error) {
+        console.error('[SocketService] ❌ Initialization error:', error);
+        this.isInitialized = false;
+        this.connectionInProgress = false;
+        resolve(false);
+      } finally {
+        this.initializationInProgress = false;
       }
     });
 
-    this.subscriptions.push(authSub);
+    return this.connectionPromise;
+  }
+
+  private async initializeConnection(): Promise<void> {
+    console.log('[SocketService] 🔌 Initializing WebSocket connection');
+    
+    return new Promise((resolve) => {
+      const currentUser = this.authService.currentUserValue;
+      const token = this.authService.getToken();
+      
+      // If we have credentials, connect immediately
+      if (currentUser && token) {
+        console.log('[SocketService] 🔑 User authenticated, connecting');
+        this.connect();
+        resolve();
+        return;
+      }
+      
+      // For page reloads, try to connect immediately even without auth
+      if (this.isPageReload) {
+        console.log('[SocketService] 🔄 Page reload - attempting immediate connection');
+        this.connect();
+        resolve();
+        return;
+      }
+      
+      console.log('[SocketService] ⏳ Waiting for user authentication...');
+      const authSub = this.authService.currentUser.subscribe(user => {
+        if (user) {
+          console.log('[SocketService] 🔑 User authenticated via subscription, connecting');
+          authSub.unsubscribe();
+          this.connect();
+          resolve();
+        }
+      });
+
+      // Shorter timeout for page reloads
+      const timeout = this.isPageReload ? 1000 : 3000;
+      
+      setTimeout(() => {
+        authSub.unsubscribe();
+        console.log('[SocketService] ⏰ Auth wait timeout, connecting anyway');
+        this.connect();
+        resolve();
+      }, timeout);
+    });
+  }
+
+  private waitForConnectionWithTimeout(timeoutMs: number): Promise<boolean> {
+    return new Promise((resolve) => {
+      if (this.isConnected()) {
+        console.log('[SocketService] ✅ Already connected in waitForConnection');
+        resolve(true);
+        return;
+      }
+
+      let timeoutHandled = false;
+      
+      const subscription = this.connectionReady$.subscribe(ready => {
+        if (ready && !timeoutHandled) {
+          console.log('[SocketService] ✅ Connection ready received');
+          subscription.unsubscribe();
+          resolve(true);
+        }
+      });
+
+      const connectionCheck = setInterval(() => {
+        if (this.isConnected() && !timeoutHandled) {
+          console.log('[SocketService] ✅ Direct connection check passed');
+          clearInterval(connectionCheck);
+          subscription.unsubscribe();
+          resolve(true);
+        }
+      }, 500);
+
+      setTimeout(() => {
+        if (!timeoutHandled) {
+          timeoutHandled = true;
+          console.warn('[SocketService] ⏰ Connection timeout reached');
+          subscription.unsubscribe();
+          clearInterval(connectionCheck);
+          resolve(false);
+        }
+      }, timeoutMs);
+    });
   }
 
   async connect(): Promise<void> {
-    this.disconnect();
+    if (this.isConnected()) {
+      console.log('[SocketService] ✅ Already connected, skipping connect');
+      return;
+    }
+
+    if (this.connectionInProgress && !this.isPageReload) {
+      console.log('[SocketService] 🔄 Connection already in progress, skipping');
+      return;
+    }
+
+    if (this.connectionTimeout) {
+      clearTimeout(this.connectionTimeout);
+      this.connectionTimeout = null;
+    }
+
+    this.connectionInProgress = true;
 
     try {
       const token = this.authService.getToken();
       const currentUser = this.authService.currentUserValue;
       
-      console.log('[SocketService] 🔌 Attempting WebSocket connection', { 
+      console.log('[SocketService] 🔌 Creating WebSocket connection', { 
         hasToken: !!token,
-        tokenLength: token?.length || 0,
-        currentUser: currentUser,
-        wsUrl: environment.wsUrl,
-        timestamp: new Date().toISOString()
+        hasUser: !!currentUser,
+        userId: currentUser?._id,
+        username: currentUser?.username,
+        isPageReload: this.isPageReload
       });
 
-      if (this.connectionTimeout) {
-        clearTimeout(this.connectionTimeout);
-        this.connectionTimeout = null;
+      // For page reloads, attempt connection even without immediate auth
+      if (!token && !this.isPageReload) {
+        console.warn('[SocketService] ⚠️ No token and not page reload - cannot connect');
+        this.connectionInProgress = false;
+        throw new Error('No authentication token available');
       }
 
+      // Only cleanup if not in page reload scenario
+      if (!this.isPageReload) {
+        this.cleanupSocket();
+      } else if (this.socket && !this.socket.connected) {
+        // During reload, only cleanup if socket exists but isn't connected
+        this.cleanupSocket();
+      }
+
+      console.log('[SocketService] 🔗 Connecting to:', `${environment.wsUrl}/quiz`);
+      
+      const authData: any = {};
+      if (token) {
+        authData.token = token;
+      }
+      if (currentUser) {
+        authData.user = JSON.stringify({
+          userId: currentUser._id,
+          username: currentUser.username
+        });
+      }
+
+      // Use forceNew: false to allow connection reuse
       this.socket = io(`${environment.wsUrl}/quiz`, {
         transports: ['websocket', 'polling'],
-        auth: {
-          token: token || '',
-          user: currentUser ? JSON.stringify({
-            userId: currentUser._id,
-            username: currentUser.username
-          }) : ''
-        },
+        auth: authData,
         autoConnect: true,
         reconnection: true,
         reconnectionAttempts: this.maxReconnectAttempts,
         reconnectionDelay: 1000,
         reconnectionDelayMax: 5000,
-        timeout: 10000,
+        timeout: 8000, // Reduced timeout
+        forceNew: false, // Allow connection reuse
+        closeOnBeforeunload: false // Important: don't close on page reload
       });
 
       this.setupListeners();
 
       this.connectionTimeout = setTimeout(() => {
-        if (!this.isConnected()) {
-          console.error('[SocketService] ⏰ Connection timeout - server not responding after 8 seconds');
-          this.handleConnectionError(new Error('Connection timeout - server not responding'));
+        if (!this.isConnected() && this.connectionInProgress) {
+          console.error('[SocketService] ⏰ Connection timeout - server not responding');
+          this.handleConnectionError(new Error('Connection timeout'));
+          this.connectionInProgress = false;
         }
       }, 8000);
 
     } catch (error) {
       console.error('[SocketService] ❌ Connection setup error:', error);
+      this.initializationInProgress = false;
+      this.connectionInProgress = false;
+      this.connectionPromise = null;
       this.handleConnectionError(error);
+      throw error;
     }
   }
 
-  disconnect(): void {
+private cleanupSocket(): void {
+    if (this.socket) {
+      console.log('[SocketService] 🧹 Cleaning up existing socket');
+      this.socket.removeAllListeners();
+      
+      // Only disconnect if not in page reload scenario
+      if (!this.isPageReload) {
+        this.socket.disconnect();
+      }
+      
+      this.socket = null;
+    }
+  }
+
+
+  public async getConnection(): Promise<boolean> {
+    if (this.isConnected()) {
+      return true;
+    }
+    
+    if (!this.isInitialized && !this.initializationInProgress) {
+      return await this.initializeService();
+    }
+    
+    return await this.waitForConnectionWithTimeout(5000);
+  }
+
+  public ensureInitialized(): void {
+    if (!this.isInitialized && !this.initializationInProgress) {
+      console.log('[SocketService] 🔄 Ensuring service is initialized');
+      this.initializeService().catch(error => {
+        console.error('[SocketService] ❌ Failed to ensure initialization:', error);
+      });
+    } else if (this.isConnected()) {
+      console.log('[SocketService] ✅ Already connected and initialized');
+    }
+  }
+    disconnect(): void {
+    // Only fully disconnect if this is not a page reload
+    if (this.isPageReload) {
+      console.log('[SocketService] 🔄 Page reload - skipping full disconnect');
+      return;
+    }
+
     try {
       this.isManualDisconnect = true;
+      this.shouldReconnect = false;
+      this.connectionInProgress = false;
+      this.connectionPromise = null;
       
       if (this.connectionTimeout) {
         clearTimeout(this.connectionTimeout);
         this.connectionTimeout = null;
       }
 
-      if (this.socket) {
-        console.log('[SocketService] 🔌 Disconnecting socket');
-        this.socket.removeAllListeners();
-        this.socket.disconnect();
-        this.socket = null;
-        this.connectionStatus$.next(false);
-        this.reconnectAttempts = 0;
-      }
+      this.cleanupSocket();
+      
+      this.connectionStatus$.next(false);
+      this.connectionReadySubject.next(false);
+      this.reconnectAttempts = 0;
+      this.isInitialized = false;
+      
+      console.log('[SocketService] 🔌 Socket disconnected and cleaned up');
     } catch (err) {
       console.error('[SocketService] ❌ Disconnect error', err);
     }
+  }
+
+    public async recoverConnection(): Promise<boolean> {
+    if (this.isConnected()) {
+      return true;
+    }
+
+    console.log('[SocketService] 🔄 Attempting connection recovery');
+    
+    // Reset state for recovery
+    this.isPageReload = false;
+    this.connectionInProgress = false;
+    this.connectionPromise = null;
+    
+    return await this.initializeService();
   }
 
   private setupListeners(): void {
@@ -195,22 +495,29 @@ export class SocketService implements OnDestroy {
       console.error('[SocketService] ❌ Cannot setup listeners - socket is null');
       return;
     }
-
     console.log('[SocketService] 📡 Setting up WebSocket listeners');
 
-    // Connection events
-    this.socket.on('connect', () => {
+   this.socket.on('connect', () => {
       console.log('[SocketService] ✅ Connected to server, Socket ID:', this.socket?.id);
       if (this.connectionTimeout) {
         clearTimeout(this.connectionTimeout);
         this.connectionTimeout = null;
       }
       this.connectionStatus$.next(true);
+      this.connectionReadySubject.next(true);
       this.reconnectAttempts = 0;
       this.isManualDisconnect = false;
+      this.connectionInProgress = false;
+
+ // Clear page reload flag once connected
+      this.isPageReload = false;
+      sessionStorage.removeItem('isReloading');
+      sessionStorage.removeItem('socketWasConnected');
       
+      console.log('[SocketService] 🚀 Socket connection fully ready for requests');
+      
+      // Request online users after connection
       setTimeout(() => {
-        console.log('[SocketService] 🚀 Socket connection fully ready for requests');
         this.requestOnlineUsers();
       }, 300);
     });
@@ -218,6 +525,13 @@ export class SocketService implements OnDestroy {
     this.socket.on('disconnect', (reason: any) => {
       console.log('[SocketService] 🔌 Disconnected:', reason);
       this.connectionStatus$.next(false);
+      this.connectionReadySubject.next(false);
+      this.connectionInProgress = false;
+      
+      if (this.isPageReload) {
+        console.log('[SocketService] 🔄 Page reload - not attempting reconnection');
+        return;
+      }
       
       if (!this.isManualDisconnect) {
         this.handleDisconnect(reason);
@@ -230,6 +544,13 @@ export class SocketService implements OnDestroy {
         clearTimeout(this.connectionTimeout);
         this.connectionTimeout = null;
       }
+      this.connectionInProgress = false;
+      
+      if (this.isPageReload) {
+        console.log('[SocketService] 🔄 Page reload - not handling connection error');
+        return;
+      }
+      
       this.handleConnectionError(error);
     });
 
@@ -423,41 +744,96 @@ export class SocketService implements OnDestroy {
 
   // ========== SOLO METHODS ==========
 
-  emitGetSoloQuestions(count: number): void {
-    if (!this.isConnected() || !this.socket) {
-      console.error('[SocketService] ❌ Cannot get solo questions - not connected');
-      return;
-    }
-    
-    console.log(`[SocketService] 📤 Emitting getSoloQuestions for ${count} questions`);
-    this.socket.emit('getSoloQuestions', { count, mode: 'solo' });
+  emitGetSoloQuestions(count: number): Promise<boolean> {
+    return new Promise(async (resolve) => {
+      if (!this.isConnected() || !this.socket) {
+        console.log('[SocketService] 🔄 No active connection, attempting recovery before emitting');
+        
+        try {
+          const success = await this.recoverConnection();
+          if (success && this.socket) {
+            console.log(`[SocketService] 📤 Emitting getSoloQuestions after recovery`);
+            this.socket.emit('getSoloQuestions', { count, mode: 'solo' });
+            resolve(true);
+          } else {
+            console.error('[SocketService] ❌ Failed to recover connection');
+            resolve(false);
+          }
+        } catch (error) {
+          console.error('[SocketService] ❌ Connection recovery error:', error);
+          resolve(false);
+        }
+        return;
+      }
+      
+      console.log(`[SocketService] 📤 Emitting getSoloQuestions for ${count} questions`);
+      this.socket.emit('getSoloQuestions', { count, mode: 'solo' });
+      resolve(true);
+    });
+  }
+  emitSubmitSoloAnswer(quizId: string, questionIndex: number, answerIndex: number, timeSpent: number): Promise<boolean> {
+    return new Promise(async (resolve) => {
+      if (!this.isConnected() || !this.socket) {
+        console.error('[SocketService] ❌ Cannot submit solo answer - not connected');
+        
+        try {
+          const success = await this.initializeService();
+          if (success && this.socket) {
+            console.log(`[SocketService] 📤 Emitting submitSoloAnswer after reconnect`);
+            this.socket.emit('submitSoloAnswer', {
+              quizId,
+              questionIndex,
+              answerIndex,
+              timeSpent
+            });
+            resolve(true);
+          } else {
+            resolve(false);
+          }
+        } catch (error) {
+          resolve(false);
+        }
+        return;
+      }
+      
+      console.log(`[SocketService] 📤 Emitting submitSoloAnswer:`, {
+        quizId, questionIndex, answerIndex, timeSpent
+      });
+      
+      this.socket.emit('submitSoloAnswer', {
+        quizId,
+        questionIndex,
+        answerIndex,
+        timeSpent
+      });
+      resolve(true);
+    });
   }
 
-  emitSubmitSoloAnswer(quizId: string, questionIndex: number, answerIndex: number, timeSpent: number): void {
-    if (!this.isConnected() || !this.socket) {
-      console.error('[SocketService] ❌ Cannot submit solo answer - not connected');
-      return;
-    }
-    
-    console.log(`[SocketService] 📤 Emitting submitSoloAnswer:`, {
-      quizId, questionIndex, answerIndex, timeSpent
+  emitValidateSoloAnswers(data: SoloAnswerValidationRequest): Promise<boolean> {
+    return new Promise(async (resolve) => {
+      if (!this.isConnected() || !this.socket) {
+        console.error('[SocketService] ❌ Cannot validate solo answers - not connected');
+        
+        try {
+          const success = await this.initializeService();
+          if (success && this.socket) {
+            console.log('[SocketService] ✅ Submitting solo answers for validation after reconnect:', data);
+            this.socket.emit('validateSoloAnswers', data);
+            resolve(true);
+          } else {
+            resolve(false);
+          }
+        } catch (error) {
+          resolve(false);
+        }
+        return;
+      }
+      
+      console.log('[SocketService] ✅ Submitting solo answers for validation:', data);
+      this.socket.emit('validateSoloAnswers', data);
+      resolve(true);
     });
-    
-    this.socket.emit('submitSoloAnswer', {
-      quizId,
-      questionIndex,
-      answerIndex,
-      timeSpent
-    });
-  }
-
-  emitValidateSoloAnswers(data: SoloAnswerValidationRequest): void {
-    if (!this.isConnected() || !this.socket) {
-      console.error('[SocketService] ❌ Cannot validate solo answers - not connected');
-      return;
-    }
-    console.log('[SocketService] ✅ Submitting solo answers for validation:', data);
-    this.socket.emit('validateSoloAnswers', data);
   }
 
   // ========== SOLO OBSERVABLES ==========
@@ -476,102 +852,268 @@ export class SocketService implements OnDestroy {
 
   // ========== SEQUENTIAL QUIZ EMIT METHODS ==========
 
-  emitStartSequentialQuiz(quizId: string, questionCount: number): void {
-    if (!this.isConnected() || !this.socket) {
-      console.error('[SocketService] ❌ Cannot start sequential quiz - not connected');
-      return;
-    }
-    console.log('[SocketService] 🎯 Starting sequential quiz:', quizId, questionCount);
-    this.socket.emit('startSequentialQuiz', { quizId, questionCount });
-  }
-
-  emitJoinSequentialQuiz(quizId: string): void {
-    if (!this.isConnected() || !this.socket) {
-      console.error('[SocketService] ❌ Cannot join sequential quiz - not connected');
-      return;
-    }
-    console.log('[SocketService] 🎯 Joining sequential quiz:', quizId);
-    this.socket.emit('joinSequentialQuiz', { quizId });
-  }
-
-  emitRequestNextQuestion(quizId: string): void {
-    if (!this.isConnected() || !this.socket) {
-      console.error('[SocketService] ❌ Cannot request next question - not connected');
-      return;
-    }
-    console.log('[SocketService] ❓ Requesting next question for quiz:', quizId);
-    this.socket.emit('requestNextQuestion', { quizId });
-  }
-
-  emitSubmitSequentialAnswer(quizId: string, questionIndex: number, answerIndex: number, timeSpent: number): void {
-    if (!this.isConnected() || !this.socket) {
-      console.error('[SocketService] ❌ Cannot submit sequential answer - not connected');
-      return;
-    }
-    console.log('[SocketService] 📝 Submitting sequential answer:', { 
-      quizId, 
-      questionIndex, 
-      answerIndex, 
-      timeSpent: timeSpent.toFixed(2) + 's' 
+  emitStartSequentialQuiz(quizId: string, questionCount: number): Promise<boolean> {
+    return new Promise(async (resolve) => {
+      if (!this.isConnected() || !this.socket) {
+        console.error('[SocketService] ❌ Cannot start sequential quiz - not connected');
+        
+        try {
+          const success = await this.initializeService();
+          if (success && this.socket) {
+            console.log('[SocketService] 🎯 Starting sequential quiz after reconnect:', quizId, questionCount);
+            this.socket.emit('startSequentialQuiz', { quizId, questionCount });
+            resolve(true);
+          } else {
+            resolve(false);
+          }
+        } catch (error) {
+          resolve(false);
+        }
+        return;
+      }
+      
+      console.log('[SocketService] 🎯 Starting sequential quiz:', quizId, questionCount);
+      this.socket.emit('startSequentialQuiz', { quizId, questionCount });
+      resolve(true);
     });
-    this.socket.emit('submitSequentialAnswer', { quizId, questionIndex, answerIndex, timeSpent });
+  }
+
+  emitJoinSequentialQuiz(quizId: string): Promise<boolean> {
+    return new Promise(async (resolve) => {
+      if (!this.isConnected() || !this.socket) {
+        console.error('[SocketService] ❌ Cannot join sequential quiz - not connected');
+        
+        try {
+          const success = await this.initializeService();
+          if (success && this.socket) {
+            console.log('[SocketService] 🎯 Joining sequential quiz after reconnect:', quizId);
+            this.socket.emit('joinSequentialQuiz', { quizId });
+            resolve(true);
+          } else {
+            resolve(false);
+          }
+        } catch (error) {
+          resolve(false);
+        }
+        return;
+      }
+      
+      console.log('[SocketService] 🎯 Joining sequential quiz:', quizId);
+      this.socket.emit('joinSequentialQuiz', { quizId });
+      resolve(true);
+    });
+  }
+
+  emitRequestNextQuestion(quizId: string): Promise<boolean> {
+    return new Promise(async (resolve) => {
+      if (!this.isConnected() || !this.socket) {
+        console.error('[SocketService] ❌ Cannot request next question - not connected');
+        
+        try {
+          const success = await this.initializeService();
+          if (success && this.socket) {
+            console.log('[SocketService] ❓ Requesting next question for quiz after reconnect:', quizId);
+            this.socket.emit('requestNextQuestion', { quizId });
+            resolve(true);
+          } else {
+            resolve(false);
+          }
+        } catch (error) {
+          resolve(false);
+        }
+        return;
+      }
+      
+      console.log('[SocketService] ❓ Requesting next question for quiz:', quizId);
+      this.socket.emit('requestNextQuestion', { quizId });
+      resolve(true);
+    });
+  }
+
+  emitSubmitSequentialAnswer(quizId: string, questionIndex: number, answerIndex: number, timeSpent: number): Promise<boolean> {
+    return new Promise(async (resolve) => {
+      if (!this.isConnected() || !this.socket) {
+        console.error('[SocketService] ❌ Cannot submit sequential answer - not connected');
+        
+        try {
+          const success = await this.initializeService();
+          if (success && this.socket) {
+            console.log('[SocketService] 📝 Submitting sequential answer after reconnect:', { 
+              quizId, 
+              questionIndex, 
+              answerIndex, 
+              timeSpent: timeSpent.toFixed(2) + 's' 
+            });
+            this.socket.emit('submitSequentialAnswer', { quizId, questionIndex, answerIndex, timeSpent });
+            resolve(true);
+          } else {
+            resolve(false);
+          }
+        } catch (error) {
+          resolve(false);
+        }
+        return;
+      }
+      
+      console.log('[SocketService] 📝 Submitting sequential answer:', { 
+        quizId, 
+        questionIndex, 
+        answerIndex, 
+        timeSpent: timeSpent.toFixed(2) + 's' 
+      });
+      this.socket.emit('submitSequentialAnswer', { quizId, questionIndex, answerIndex, timeSpent });
+      resolve(true);
+    });
   }
 
   // ========== QUIZ QUESTIONS EMIT METHODS ==========
 
-  emitRequestQuestions(payload: { quizId: string; count: number; mode?: string }): void {
-    if (!this.isConnected() || !this.socket) {
-      console.error('[SocketService] ❌ Cannot request questions - not connected');
-      return;
-    }
-    console.log('[SocketService] 📚 Requesting questions for online mode:', payload);
-    this.socket.emit('requestQuestions', {
-      ...payload,
-      timestamp: Date.now(),
-      mode: 'online',
+  emitRequestQuestions(payload: { quizId: string; count: number; mode?: string }): Promise<boolean> {
+    return new Promise(async (resolve) => {
+      if (!this.isConnected() || !this.socket) {
+        console.error('[SocketService] ❌ Cannot request questions - not connected');
+        
+        try {
+          const success = await this.initializeService();
+          if (success && this.socket) {
+            console.log('[SocketService] 📚 Requesting questions for online mode after reconnect:', payload);
+            this.socket.emit('requestQuestions', {
+              ...payload,
+              timestamp: Date.now(),
+              mode: 'online',
+            });
+            resolve(true);
+          } else {
+            resolve(false);
+          }
+        } catch (error) {
+          resolve(false);
+        }
+        return;
+      }
+      
+      console.log('[SocketService] 📚 Requesting questions for online mode:', payload);
+      this.socket.emit('requestQuestions', {
+        ...payload,
+        timestamp: Date.now(),
+        mode: 'online',
+      });
+      resolve(true);
     });
   }
 
-  emitRequestConsistentQuestions(payload: { quizId: string; count: number; seed: string }): void {
-    if (!this.isConnected() || !this.socket) {
-      console.error('[SocketService] ❌ Cannot request consistent questions - not connected');
-      return;
-    }
-    console.log('[SocketService] 🔄 Requesting consistent questions with seed:', payload.seed);
-    this.socket.emit('requestConsistentQuestions', {
-      ...payload,
-      timestamp: Date.now(),
-      mode: 'online',
+  emitRequestConsistentQuestions(payload: { quizId: string; count: number; seed: string }): Promise<boolean> {
+    return new Promise(async (resolve) => {
+      if (!this.isConnected() || !this.socket) {
+        console.error('[SocketService] ❌ Cannot request consistent questions - not connected');
+        
+        try {
+          const success = await this.initializeService();
+          if (success && this.socket) {
+            console.log('[SocketService] 🔄 Requesting consistent questions with seed after reconnect:', payload.seed);
+            this.socket.emit('requestConsistentQuestions', {
+              ...payload,
+              timestamp: Date.now(),
+              mode: 'online',
+            });
+            resolve(true);
+          } else {
+            resolve(false);
+          }
+        } catch (error) {
+          resolve(false);
+        }
+        return;
+      }
+      
+      console.log('[SocketService] 🔄 Requesting consistent questions with seed:', payload.seed);
+      this.socket.emit('requestConsistentQuestions', {
+        ...payload,
+        timestamp: Date.now(),
+        mode: 'online',
+      });
+      resolve(true);
     });
   }
 
   // ========== SYNCHRONIZED QUIZ EMIT METHODS ==========
 
-  emitCreateSynchronizedQuiz(quizId: string, questionCount: number): void {
-    if (!this.isConnected() || !this.socket) {
-      console.error('[SocketService] ❌ Cannot create synchronized quiz - not connected');
-      return;
-    }
-    console.log('[SocketService] 🔄 Creating synchronized quiz:', quizId, questionCount);
-    this.socket.emit('createSynchronizedQuiz', { quizId, questionCount });
+  emitCreateSynchronizedQuiz(quizId: string, questionCount: number): Promise<boolean> {
+    return new Promise(async (resolve) => {
+      if (!this.isConnected() || !this.socket) {
+        console.error('[SocketService] ❌ Cannot create synchronized quiz - not connected');
+        
+        try {
+          const success = await this.initializeService();
+          if (success && this.socket) {
+            console.log('[SocketService] 🔄 Creating synchronized quiz after reconnect:', quizId, questionCount);
+            this.socket.emit('createSynchronizedQuiz', { quizId, questionCount });
+            resolve(true);
+          } else {
+            resolve(false);
+          }
+        } catch (error) {
+          resolve(false);
+        }
+        return;
+      }
+      
+      console.log('[SocketService] 🔄 Creating synchronized quiz:', quizId, questionCount);
+      this.socket.emit('createSynchronizedQuiz', { quizId, questionCount });
+      resolve(true);
+    });
   }
 
-  emitJoinSynchronizedQuiz(quizId: string, userId: string): void {
-    if (!this.isConnected() || !this.socket) {
-      console.error('[SocketService] ❌ Cannot join synchronized quiz - not connected');
-      return;
-    }
-    console.log('[SocketService] 🔄 Joining synchronized quiz:', quizId, userId);
-    this.socket.emit('joinSynchronizedQuiz', { quizId, userId });
+  emitJoinSynchronizedQuiz(quizId: string, userId: string): Promise<boolean> {
+    return new Promise(async (resolve) => {
+      if (!this.isConnected() || !this.socket) {
+        console.error('[SocketService] ❌ Cannot join synchronized quiz - not connected');
+        
+        try {
+          const success = await this.initializeService();
+          if (success && this.socket) {
+            console.log('[SocketService] 🔄 Joining synchronized quiz after reconnect:', quizId, userId);
+            this.socket.emit('joinSynchronizedQuiz', { quizId, userId });
+            resolve(true);
+          } else {
+            resolve(false);
+          }
+        } catch (error) {
+          resolve(false);
+        }
+        return;
+      }
+      
+      console.log('[SocketService] 🔄 Joining synchronized quiz:', quizId, userId);
+      this.socket.emit('joinSynchronizedQuiz', { quizId, userId });
+      resolve(true);
+    });
   }
 
-  emitSubmitSynchronizedAnswer(quizId: string, questionIndex: number, answerIndex: number): void {
-    if (!this.isConnected() || !this.socket) {
-      console.error('[SocketService] ❌ Cannot submit synchronized answer - not connected');
-      return;
-    }
-    console.log('[SocketService] 📝 Submitting synchronized answer:', { quizId, questionIndex, answerIndex });
-    this.socket.emit('submitSynchronizedAnswer', { quizId, questionIndex, answerIndex });
+  emitSubmitSynchronizedAnswer(quizId: string, questionIndex: number, answerIndex: number): Promise<boolean> {
+    return new Promise(async (resolve) => {
+      if (!this.isConnected() || !this.socket) {
+        console.error('[SocketService] ❌ Cannot submit synchronized answer - not connected');
+        
+        try {
+          const success = await this.initializeService();
+          if (success && this.socket) {
+            console.log('[SocketService] 📝 Submitting synchronized answer after reconnect:', { quizId, questionIndex, answerIndex });
+            this.socket.emit('submitSynchronizedAnswer', { quizId, questionIndex, answerIndex });
+            resolve(true);
+          } else {
+            resolve(false);
+          }
+        } catch (error) {
+          resolve(false);
+        }
+        return;
+      }
+      
+      console.log('[SocketService] 📝 Submitting synchronized answer:', { quizId, questionIndex, answerIndex });
+      this.socket.emit('submitSynchronizedAnswer', { quizId, questionIndex, answerIndex });
+      resolve(true);
+    });
   }
 
   // ========== ANSWER SUBMISSION ==========
@@ -583,107 +1125,272 @@ export class SocketService implements OnDestroy {
     mode: 'solo' | 'online', 
     quizId?: string, 
     questionIndex?: number
-  ): void {
-    if (!this.isConnected() || !this.socket) {
-      console.error('[SocketService] ❌ Cannot submit answer - not connected');
-      return;
-    }
-    console.log('[SocketService] 📝 Submitting answer:', { questionId, answerIndex, mode });
-    this.socket.emit('submitAnswer', {
-      questionId,
-      answerIndex,
-      timeSpent,
-      mode,
-      quizId,
-      questionIndex,
+  ): Promise<boolean> {
+    return new Promise(async (resolve) => {
+      if (!this.isConnected() || !this.socket) {
+        console.error('[SocketService] ❌ Cannot submit answer - not connected');
+        
+        try {
+          const success = await this.initializeService();
+          if (success && this.socket) {
+            console.log('[SocketService] 📝 Submitting answer after reconnect:', { questionId, answerIndex, mode });
+            this.socket.emit('submitAnswer', {
+              questionId,
+              answerIndex,
+              timeSpent,
+              mode,
+              quizId,
+              questionIndex,
+            });
+            resolve(true);
+          } else {
+            resolve(false);
+          }
+        } catch (error) {
+          resolve(false);
+        }
+        return;
+      }
+      
+      console.log('[SocketService] 📝 Submitting answer:', { questionId, answerIndex, mode });
+      this.socket.emit('submitAnswer', {
+        questionId,
+        answerIndex,
+        timeSpent,
+        mode,
+        quizId,
+        questionIndex,
+      });
+      resolve(true);
     });
   }
 
   // ========== GAME EVENTS EMIT METHODS ==========
 
-  emitRequestQuestion(payload: { quizId: string; questionIndex: number }): void {
-    if (!this.isConnected() || !this.socket) {
-      console.error('[SocketService] ❌ Cannot request question - not connected');
-      return;
-    }
-    console.log('[SocketService] ❓ Requesting question:', payload);
-    this.socket.emit('requestQuestion', { ...payload, timestamp: Date.now() });
+  emitRequestQuestion(payload: { quizId: string; questionIndex: number }): Promise<boolean> {
+    return new Promise(async (resolve) => {
+      if (!this.isConnected() || !this.socket) {
+        console.error('[SocketService] ❌ Cannot request question - not connected');
+        
+        try {
+          const success = await this.initializeService();
+          if (success && this.socket) {
+            console.log('[SocketService] ❓ Requesting question after reconnect:', payload);
+            this.socket.emit('requestQuestion', { ...payload, timestamp: Date.now() });
+            resolve(true);
+          } else {
+            resolve(false);
+          }
+        } catch (error) {
+          resolve(false);
+        }
+        return;
+      }
+      
+      console.log('[SocketService] ❓ Requesting question:', payload);
+      this.socket.emit('requestQuestion', { ...payload, timestamp: Date.now() });
+      resolve(true);
+    });
   }
 
-  emitReadyForNextQuestion(payload: { quizId: string; userId: string; questionIndex: number }): void {
-    if (!this.isConnected() || !this.socket) {
-      console.error('[SocketService] ❌ Cannot emit ready for next question - not connected');
-      return;
-    }
-    console.log('[SocketService] ✅ Ready for next question:', payload);
-    this.socket.emit('readyForNextQuestion', { ...payload, timestamp: Date.now() });
+  emitReadyForNextQuestion(payload: { quizId: string; userId: string; questionIndex: number }): Promise<boolean> {
+    return new Promise(async (resolve) => {
+      if (!this.isConnected() || !this.socket) {
+        console.error('[SocketService] ❌ Cannot emit ready for next question - not connected');
+        
+        try {
+          const success = await this.initializeService();
+          if (success && this.socket) {
+            console.log('[SocketService] ✅ Ready for next question after reconnect:', payload);
+            this.socket.emit('readyForNextQuestion', { ...payload, timestamp: Date.now() });
+            resolve(true);
+          } else {
+            resolve(false);
+          }
+        } catch (error) {
+          resolve(false);
+        }
+        return;
+      }
+      
+      console.log('[SocketService] ✅ Ready for next question:', payload);
+      this.socket.emit('readyForNextQuestion', { ...payload, timestamp: Date.now() });
+      resolve(true);
+    });
   }
 
-  emitPlayerAnswered(payload: { userId: string; questionIndex: number; isCorrect: boolean | null }): void {
-    if (!this.isConnected() || !this.socket) {
-      console.error('[SocketService] ❌ Cannot emit player answered - not connected');
-      return;
-    }
-    console.log('[SocketService] 📝 Player answered:', payload);
-    this.socket.emit('playerAnswered', payload);
+  emitPlayerAnswered(payload: { userId: string; questionIndex: number; isCorrect: boolean | null }): Promise<boolean> {
+    return new Promise(async (resolve) => {
+      if (!this.isConnected() || !this.socket) {
+        console.error('[SocketService] ❌ Cannot emit player answered - not connected');
+        
+        try {
+          const success = await this.initializeService();
+          if (success && this.socket) {
+            console.log('[SocketService] 📝 Player answered after reconnect:', payload);
+            this.socket.emit('playerAnswered', payload);
+            resolve(true);
+          } else {
+            resolve(false);
+          }
+        } catch (error) {
+          resolve(false);
+        }
+        return;
+      }
+      
+      console.log('[SocketService] 📝 Player answered:', payload);
+      this.socket.emit('playerAnswered', payload);
+      resolve(true);
+    });
   }
 
-  emitPlayerEliminated(payload: { userId: string; questionIndex: number; reason: string }): void {
-    if (!this.isConnected() || !this.socket) {
-      console.error('[SocketService] ❌ Cannot emit player eliminated - not connected');
-      return;
-    }
-    console.log('[SocketService] ❌ Player eliminated:', payload);
-    this.socket.emit('playerEliminated', payload);
+  emitPlayerEliminated(payload: { userId: string; questionIndex: number; reason: string }): Promise<boolean> {
+    return new Promise(async (resolve) => {
+      if (!this.isConnected() || !this.socket) {
+        console.error('[SocketService] ❌ Cannot emit player eliminated - not connected');
+        
+        try {
+          const success = await this.initializeService();
+          if (success && this.socket) {
+            console.log('[SocketService] ❌ Player eliminated after reconnect:', payload);
+            this.socket.emit('playerEliminated', payload);
+            resolve(true);
+          } else {
+            resolve(false);
+          }
+        } catch (error) {
+          resolve(false);
+        }
+        return;
+      }
+      
+      console.log('[SocketService] ❌ Player eliminated:', payload);
+      this.socket.emit('playerEliminated', payload);
+      resolve(true);
+    });
   }
 
-  emitPlayerWin(payload: { userId: string; username: string; questionIndex: number }): void {
-    if (!this.isConnected() || !this.socket) {
-      console.error('[SocketService] ❌ Cannot emit player win - not connected');
-      return;
-    }
-    console.log('[SocketService] 🎉 Player win:', payload);
-    this.socket.emit('playerWin', payload);
+  emitPlayerWin(payload: { userId: string; username: string; questionIndex: number }): Promise<boolean> {
+    return new Promise(async (resolve) => {
+      if (!this.isConnected() || !this.socket) {
+        console.error('[SocketService] ❌ Cannot emit player win - not connected');
+        
+        try {
+          const success = await this.initializeService();
+          if (success && this.socket) {
+            console.log('[SocketService] 🎉 Player win after reconnect:', payload);
+            this.socket.emit('playerWin', payload);
+            resolve(true);
+          } else {
+            resolve(false);
+          }
+        } catch (error) {
+          resolve(false);
+        }
+        return;
+      }
+      
+      console.log('[SocketService] 🎉 Player win:', payload);
+      this.socket.emit('playerWin', payload);
+      resolve(true);
+    });
   }
 
-  emitGameOver(payload: { winner: { userId: string; username: string } | null }): void {
-    if (!this.isConnected() || !this.socket) {
-      console.error('[SocketService] ❌ Cannot emit game over - not connected');
-      return;
-    }
-    console.log('[SocketService] 🏁 Game over:', payload);
-    this.socket.emit('gameOver', payload);
+  emitGameOver(payload: { winner: { userId: string; username: string } | null }): Promise<boolean> {
+    return new Promise(async (resolve) => {
+      if (!this.isConnected() || !this.socket) {
+        console.error('[SocketService] ❌ Cannot emit game over - not connected');
+        
+        try {
+          const success = await this.initializeService();
+          if (success && this.socket) {
+            console.log('[SocketService] 🏁 Game over after reconnect:', payload);
+            this.socket.emit('gameOver', payload);
+            resolve(true);
+          } else {
+            resolve(false);
+          }
+        } catch (error) {
+          resolve(false);
+        }
+        return;
+      }
+      
+      console.log('[SocketService] 🏁 Game over:', payload);
+      this.socket.emit('gameOver', payload);
+      resolve(true);
+    });
   }
 
-  emitDetermineWinner(payload: { quizId?: string; questionIndex: number }): void {
-    if (!this.isConnected() || !this.socket) {
-      console.error('[SocketService] ❌ Cannot determine winner - not connected');
-      return;
-    }
-    console.log('[SocketService] 🏆 Determine winner:', payload);
-    this.socket.emit('determineWinner', { ...(payload || {}), timestamp: Date.now() });
+  emitDetermineWinner(payload: { quizId?: string; questionIndex: number }): Promise<boolean> {
+    return new Promise(async (resolve) => {
+      if (!this.isConnected() || !this.socket) {
+        console.error('[SocketService] ❌ Cannot determine winner - not connected');
+        
+        try {
+          const success = await this.initializeService();
+          if (success && this.socket) {
+            console.log('[SocketService] 🏆 Determine winner after reconnect:', payload);
+            this.socket.emit('determineWinner', { ...(payload || {}), timestamp: Date.now() });
+            resolve(true);
+          } else {
+            resolve(false);
+          }
+        } catch (error) {
+          resolve(false);
+        }
+        return;
+      }
+      
+      console.log('[SocketService] 🏆 Determine winner:', payload);
+      this.socket.emit('determineWinner', { ...(payload || {}), timestamp: Date.now() });
+      resolve(true);
+    });
   }
 
   // ========== LEAVE QUIZ SESSION ==========
 
-  emitLeaveQuizSession(quizId: string): void {
-    if (!this.isConnected() || !this.socket) {
-      console.warn('[SocketService] ❌ Socket not connected, cannot emit leaveQuizSession');
-      return;
-    }
-    console.log(`🚪 [SocketService] Emitting leaveQuizSession for: ${quizId}`);
-    this.socket.emit('leaveQuizSession', { quizId });
+  emitLeaveQuizSession(quizId: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      if (!this.isConnected() || !this.socket) {
+        console.warn('[SocketService] ❌ Socket not connected, cannot emit leaveQuizSession');
+        resolve(false);
+        return;
+      }
+      
+      console.log(`🚪 [SocketService] Emitting leaveQuizSession for: ${quizId}`);
+      this.socket.emit('leaveQuizSession', { quizId });
+      resolve(true);
+    });
   }
 
   // ========== DEBUG METHODS ==========
 
-  emitDebugConnection(): void {
-    if (!this.isConnected() || !this.socket) {
-      console.error('[SocketService] ❌ Cannot debug connection - not connected');
-      return;
-    }
-    console.log('[SocketService] 🔌 Debugging connection...');
-    this.socket.emit('debug_connection');
+  emitDebugConnection(): Promise<boolean> {
+    return new Promise(async (resolve) => {
+      if (!this.isConnected() || !this.socket) {
+        console.error('[SocketService] ❌ Cannot debug connection - not connected');
+        
+        try {
+          const success = await this.initializeService();
+          if (success && this.socket) {
+            console.log('[SocketService] 🔌 Debugging connection after reconnect...');
+            this.socket.emit('debug_connection');
+            resolve(true);
+          } else {
+            resolve(false);
+          }
+        } catch (error) {
+          resolve(false);
+        }
+        return;
+      }
+      
+      console.log('[SocketService] 🔌 Debugging connection...');
+      this.socket.emit('debug_connection');
+      resolve(true);
+    });
   }
 
   // ========== ERROR HANDLING METHODS ==========
@@ -708,19 +1415,24 @@ export class SocketService implements OnDestroy {
   private handleDisconnect(reason: any): void {
     console.log('[SocketService] 🔌 Handling disconnect:', reason);
     
-    if (this.isManualDisconnect) {
-      console.log('[SocketService] 🔌 Manual disconnect, not reconnecting');
+    if (this.isManualDisconnect || !this.shouldReconnect || this.isPageReload) {
+      console.log('[SocketService] 🔌 Manual disconnect, no reconnection, or page reload - not reconnecting');
       return;
     }
 
-    if (reason === 'io server disconnect' && this.reconnectAttempts < this.maxReconnectAttempts) {
+    if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++;
       const delay = Math.min(1000 * this.reconnectAttempts, 10000);
       console.log(`[SocketService] 🔄 Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
-      setTimeout(() => this.connect(), delay);
-    } else if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      setTimeout(() => {
+        if (this.shouldReconnect && !this.isPageReload) {
+          this.connect();
+        }
+      }, delay);
+    } else {
       console.error('[SocketService] ❌ Max reconnection attempts reached');
       this.connectionStatus$.next(false);
+      this.connectionReadySubject.next(false);
     }
   }
 
@@ -879,13 +1591,34 @@ export class SocketService implements OnDestroy {
   requestOnlineUsers(): void {
     if (!this.isConnected() || !this.socket) {
       console.warn('[SocketService] ❌ Cannot request online users - not connected');
+      
+      if (!this.connectionInProgress) {
+        console.log('[SocketService] 🔄 Attempting to reconnect for online users request');
+        this.initializeService().then(success => {
+          if (success) {
+            setTimeout(() => {
+              if (this.socket && this.isConnected()) {
+                console.log('[SocketService] 👥 Retrying online users request after reconnect');
+                this.socket.emit('getOnlineUsers');
+              }
+            }, 1000);
+          }
+        });
+      }
       return;
     }
+    
     console.log('[SocketService] 👥 Requesting online users');
     this.socket.emit('getOnlineUsers');
   }
 
   getOnlineUsers(): Observable<OnlineUser[]> {
+    if (this.onlineUsers.length === 0 && this.isConnected()) {
+      setTimeout(() => {
+        this.requestOnlineUsers();
+      }, 500);
+    }
+    
     return this.onlineUsersSubject.asObservable();
   }
 
@@ -910,6 +1643,9 @@ export class SocketService implements OnDestroy {
   manualReconnect(): void {
     console.log('[SocketService] 🔄 Manual reconnection requested');
     this.reconnectAttempts = 0;
+    this.connectionPromise = null;
+    this.connectionInProgress = false;
+    this.isPageReload = false;
     this.connect();
   }
 
@@ -933,5 +1669,47 @@ export class SocketService implements OnDestroy {
       socketId: this.getSocketId(),
       reconnectAttempts: this.reconnectAttempts
     };
+  }
+
+  // Debug connection state
+  public debugConnectionState(): void {
+    console.log('🔍 [SocketService] Connection Debug:', {
+      isInitialized: this.isInitialized,
+      initializationInProgress: this.initializationInProgress,
+      connectionInProgress: this.connectionInProgress,
+      isConnected: this.isConnected(),
+      socketId: this.getSocketId(),
+      hasSocket: !!this.socket,
+      reconnectAttempts: this.reconnectAttempts,
+      connectionPromise: !!this.connectionPromise,
+      onlineUsersCount: this.onlineUsers.length,
+      isPageReload: this.isPageReload
+    });
+  }
+
+  // Debug connection issues
+  public debugConnectionIssues(): void {
+    const currentUser = this.authService.currentUserValue;
+    const token = this.authService.getToken();
+    
+    console.log('🔍 [SocketService] Connection Issue Debug:', {
+      isInitialized: this.isInitialized,
+      initializationInProgress: this.initializationInProgress,
+      connectionInProgress: this.connectionInProgress,
+      isConnected: this.isConnected(),
+      socketId: this.getSocketId(),
+      hasSocket: !!this.socket,
+      shouldReconnect: this.shouldReconnect,
+      isManualDisconnect: this.isManualDisconnect,
+      isPageReload: this.isPageReload,
+      reconnectAttempts: this.reconnectAttempts,
+      onlineUsersCount: this.onlineUsers.length,
+      connectionPromise: !!this.connectionPromise,
+      hasUser: !!currentUser,
+      hasToken: !!token,
+      userId: currentUser?._id,
+      username: currentUser?.username,
+      wsUrl: environment.wsUrl
+    });
   }
 }

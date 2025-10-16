@@ -43,20 +43,20 @@ export class HomeComponent implements OnInit, OnDestroy {
     private router: Router
   ) {}
 
-  ngOnInit(): void {
+  async ngOnInit(): Promise<void> {
     // First validate the token
-    this.authService.validateToken().subscribe(isValid => {
+    this.authService.validateToken().subscribe(async isValid => {
       if (!isValid) {
         console.error('Token validation failed');
         return;
       }
   
-      this.authService.currentUser.subscribe(user => {
+      this.authService.currentUser.subscribe(async user => {
         this.currentUser = user;
         this.isAuthenticated = !!user;
         
         if (user) {
-          this.setupSocketConnection();
+          await this.setupSocketConnection(); // Wait for connection
           this.checkOnlineModeAvailability();
           this.loadTodaysSchedule();
         } else {
@@ -66,7 +66,7 @@ export class HomeComponent implements OnInit, OnDestroy {
     });
   }
 
-  private setupSocketConnection(): void {
+  private async setupSocketConnection(): Promise<void> {
     if (!this.enableWebSocket) {
       console.warn('WebSocket is disabled in environment configuration');
       return;
@@ -75,53 +75,50 @@ export class HomeComponent implements OnInit, OnDestroy {
     this.subscriptions.unsubscribe();
     this.subscriptions = new Subscription();
 
-    this.socketService.connect();
-    
-    const connectionCheck = setTimeout(() => {
-      if (!this.socketService.isConnected()) {
-        console.warn('Failed to establish WebSocket connection');
-        return;
+    try {
+      // Wait for connection to be ready
+      const connected = await this.socketService.getConnection();
+      
+      if (connected) {
+        console.log('✅ HomeComponent: WebSocket connected, setting up listeners');
+        this.setupSocketListeners();
+      } else {
+        console.warn('⚠️ HomeComponent: WebSocket not connected, skipping listeners');
       }
+    } catch (error) {
+      console.error('❌ HomeComponent: Failed to get WebSocket connection:', error);
+    }
+  }
 
-      const onlineUsersSub = this.socketService.getOnlineUsers().subscribe({
-        next: (users: OnlineUser[]) => {
-          const usersChanged = users.length !== this.onlineUsers.length ||
-            users.some((user, index) => 
-              !this.onlineUsers[index] || 
-              user.userId !== this.onlineUsers[index]?.userId
-            );
-            
-          if (usersChanged) {
-            this.onlineUsers = [...users];
-          }
-        },
-        error: (error) => {
-          console.error('Error in online users subscription:', error);
+
+   private setupSocketListeners(): void {
+    const onlineUsersSub = this.socketService.getOnlineUsers().subscribe({
+      next: (users: OnlineUser[]) => {
+        this.onlineUsers = [...users];
+        console.log(`👥 HomeComponent: Online users updated: ${users.length} users`);
+      },
+      error: (error) => {
+        console.error('HomeComponent: Error in online users subscription:', error);
+      }
+    });
+    const connectionStatusSub = this.socketService.getConnectionStatus().subscribe({
+      next: (isConnected: boolean) => {
+        this.isConnected = isConnected;
+        console.log(`🔌 HomeComponent: Connection status: ${isConnected ? 'Connected' : 'Disconnected'}`);
+        
+        if (isConnected) {
+          // Request online users when connected
+          this.socketService.requestOnlineUsers();
         }
-      });
-      
-      const connectionStatusSub = this.socketService.getConnectionStatus().subscribe({
-        next: (isConnected: boolean) => {
-          const wasConnected = this.isConnected;
-          this.isConnected = isConnected;
-          
-          if (isConnected && !wasConnected) {
-            setTimeout(() => {
-            }, 500);
-          }
-        },
-        error: (error) => {
-          console.error('Error in connection status subscription:', error);
-          this.isConnected = false;
-        }
-      });
-      
-      this.subscriptions.add(onlineUsersSub);
-      this.subscriptions.add(connectionStatusSub);
-      
-    }, 1000);
+      },
+      error: (error) => {
+        console.error('HomeComponent: Error in connection status subscription:', error);
+        this.isConnected = false;
+      }
+    });
     
-    this.subscriptions.add(new Subscription(() => clearTimeout(connectionCheck)));
+    this.subscriptions.add(onlineUsersSub);
+    this.subscriptions.add(connectionStatusSub);
   }
 
   private checkOnlineModeAvailability(): void {
@@ -288,8 +285,9 @@ export class HomeComponent implements OnInit, OnDestroy {
     return quizTime === currentTimeString;
   }
 
-  private cleanupSocketConnection(): void {
-    this.socketService.disconnect();
+   private cleanupSocketConnection(): void {
+    // Only cleanup subscriptions, don't disconnect the socket
+    this.subscriptions.unsubscribe();
     this.onlineUsers = [];
     this.stopCountdown();
   }
