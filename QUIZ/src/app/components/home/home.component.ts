@@ -80,13 +80,13 @@ export class HomeComponent implements OnInit, OnDestroy {
       const connected = await this.socketService.getConnection();
       
       if (connected) {
-        console.log('✅ HomeComponent: WebSocket connected, setting up listeners');
+        console.log(' HomeComponent: WebSocket connected, setting up listeners');
         this.setupSocketListeners();
       } else {
-        console.warn('⚠️ HomeComponent: WebSocket not connected, skipping listeners');
+        console.warn('HomeComponent: WebSocket not connected, skipping listeners');
       }
     } catch (error) {
-      console.error('❌ HomeComponent: Failed to get WebSocket connection:', error);
+      console.error('HomeComponent: Failed to get WebSocket connection:', error);
     }
   }
 
@@ -95,7 +95,7 @@ export class HomeComponent implements OnInit, OnDestroy {
     const onlineUsersSub = this.socketService.getOnlineUsers().subscribe({
       next: (users: OnlineUser[]) => {
         this.onlineUsers = [...users];
-        console.log(`👥 HomeComponent: Online users updated: ${users.length} users`);
+        console.log(` HomeComponent: Online users updated: ${users.length} users`);
       },
       error: (error) => {
         console.error('HomeComponent: Error in online users subscription:', error);
@@ -104,7 +104,7 @@ export class HomeComponent implements OnInit, OnDestroy {
     const connectionStatusSub = this.socketService.getConnectionStatus().subscribe({
       next: (isConnected: boolean) => {
         this.isConnected = isConnected;
-        console.log(`🔌 HomeComponent: Connection status: ${isConnected ? 'Connected' : 'Disconnected'}`);
+        console.log(` HomeComponent: Connection status: ${isConnected ? 'Connected' : 'Disconnected'}`);
         
         if (isConnected) {
           // Request online users when connected
