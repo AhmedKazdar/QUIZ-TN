@@ -1,3 +1,4 @@
+// socket.service.ts
 import { Injectable, OnDestroy } from '@angular/core';
 import { io, Socket } from 'socket.io-client';
 import { BehaviorSubject, Observable, Subject, Subscription } from 'rxjs';
@@ -100,33 +101,27 @@ export class SocketService implements OnDestroy {
   private connectionTimeout: any = null;
   private isManualDisconnect = false;
 
-    constructor(private authService: AuthService) {
-    console.log('[SocketService]  SocketService constructed');
-    
-    // Improved page reload detection
+  constructor(private authService: AuthService) {
+    console.log('[SocketService] SocketService constructed');
     this.detectPageReload();
     
-    // Listen for page unload to prevent reconnection
     if (typeof window !== 'undefined') {
       window.addEventListener('beforeunload', () => {
-        console.log('[SocketService]  Page unloading - marking as reload');
+        console.log('[SocketService] Page unloading - marking as reload');
         this.isPageReload = true;
         this.shouldReconnect = true;
         this.isManualDisconnect = false;
         
-        // Store connection state for reload
         if (this.socket?.connected) {
           sessionStorage.setItem('socketWasConnected', 'true');
           sessionStorage.setItem('socketId', this.socket.id || '');
         }
       });
 
-      // Listen for page load completion
       window.addEventListener('load', () => {
-        console.log('[SocketService]  Page load complete');
+        console.log('[SocketService] Page load complete');
         this.reloadDetectionCompleted = true;
         
-        // Clear reload markers after a short time
         setTimeout(() => {
           sessionStorage.removeItem('socketWasConnected');
           sessionStorage.removeItem('socketId');
@@ -142,20 +137,17 @@ export class SocketService implements OnDestroy {
       const wasReloaded = navigationEntry?.type === 'reload';
       
       if (wasReloaded || sessionStorage.getItem('isReloading') === 'true') {
-        console.log('[SocketService]  Page reload detected');
+        console.log('[SocketService] Page reload detected');
         this.isPageReload = true;
         
-        // Check if we had a previous connection
         const socketWasConnected = sessionStorage.getItem('socketWasConnected') === 'true';
         if (socketWasConnected) {
-          console.log('[SocketService]  Previous socket connection detected, attempting to maintain');
+          console.log('[SocketService] Previous socket connection detected, attempting to maintain');
         }
       }
       
-      // Set for next reload detection
       sessionStorage.setItem('isReloading', 'true');
       
-      // Clear the reload marker after a short time
       setTimeout(() => {
         if (sessionStorage.getItem('isReloading') === 'true') {
           sessionStorage.removeItem('isReloading');
@@ -164,22 +156,19 @@ export class SocketService implements OnDestroy {
     }
   }
 
-ngOnDestroy(): void {
-    // Only fully disconnect if this is not a page reload
+  ngOnDestroy(): void {
     if (!this.isPageReload) {
       console.log('[SocketService] Normal destruction - disconnecting');
       this.isManualDisconnect = true;
       this.disconnect();
     } else {
       console.log('[SocketService] Page reload - preserving connection state');
-      // Don't disconnect during reloads
     }
     
     this.subscriptions.forEach(s => s.unsubscribe());
   }
 
   public async initializeService(): Promise<boolean> {
-    // If we're in a page reload scenario and already have a connection, use it
     if (this.isPageReload && this.isConnected()) {
       console.log('[SocketService] Page reload - reusing existing connection');
       this.connectionReadySubject.next(true);
@@ -197,7 +186,7 @@ ngOnDestroy(): void {
       return Promise.resolve(true);
     }
 
-    console.log('[SocketService]  Starting WebSocket initialization');
+    console.log('[SocketService] Starting WebSocket initialization');
     this.connectionInProgress = true;
     this.initializationInProgress = true;
 
@@ -205,12 +194,12 @@ ngOnDestroy(): void {
       try {
         await this.initializeConnection();
         
-        const connected = await this.waitForConnectionWithTimeout(10000); // Reduced timeout
+        const connected = await this.waitForConnectionWithTimeout(10000);
         
         if (connected) {
-          console.log('[SocketService]  WebSocket connection established');
+          console.log('[SocketService] WebSocket connection established');
           this.isInitialized = true;
-          this.isPageReload = false; // Reset reload flag after successful connection
+          this.isPageReload = false;
           resolve(true);
         } else {
           console.error('[SocketService] WebSocket connection failed - timeout');
@@ -219,7 +208,7 @@ ngOnDestroy(): void {
           resolve(false);
         }
       } catch (error) {
-        console.error('[SocketService]  Initialization error:', error);
+        console.error('[SocketService] Initialization error:', error);
         this.isInitialized = false;
         this.connectionInProgress = false;
         resolve(false);
@@ -232,13 +221,12 @@ ngOnDestroy(): void {
   }
 
   private async initializeConnection(): Promise<void> {
-    console.log('[SocketService]  Initializing WebSocket connection');
+    console.log('[SocketService] Initializing WebSocket connection');
     
     return new Promise((resolve) => {
       const currentUser = this.authService.currentUserValue;
       const token = this.authService.getToken();
       
-      // If we have credentials, connect immediately
       if (currentUser && token) {
         console.log('[SocketService] User authenticated, connecting');
         this.connect();
@@ -246,7 +234,6 @@ ngOnDestroy(): void {
         return;
       }
       
-      // For page reloads, try to connect immediately even without auth
       if (this.isPageReload) {
         console.log('[SocketService] Page reload - attempting immediate connection');
         this.connect();
@@ -264,7 +251,6 @@ ngOnDestroy(): void {
         }
       });
 
-      // Shorter timeout for page reloads
       const timeout = this.isPageReload ? 1000 : 3000;
       
       setTimeout(() => {
@@ -288,7 +274,7 @@ ngOnDestroy(): void {
       
       const subscription = this.connectionReady$.subscribe(ready => {
         if (ready && !timeoutHandled) {
-          console.log('[SocketService]  Connection ready received');
+          console.log('[SocketService] Connection ready received');
           subscription.unsubscribe();
           resolve(true);
         }
@@ -322,8 +308,11 @@ ngOnDestroy(): void {
     }
 
     if (this.connectionInProgress && !this.isPageReload) {
-      console.log('[SocketService] Connection already in progress, skipping');
-      return;
+      console.log('[SocketService] Connection already in progress, waiting...');
+      const connected = await this.waitForConnectionWithTimeout(5000);
+      if (connected) {
+        return;
+      }
     }
 
     if (this.connectionTimeout) {
@@ -342,77 +331,87 @@ ngOnDestroy(): void {
         hasUser: !!currentUser,
         userId: currentUser?._id,
         username: currentUser?.username,
+        isAuthenticated: this.authService.isAuthenticated(),
         isPageReload: this.isPageReload
       });
 
-      // For page reloads, attempt connection even without immediate auth
-      if (!token && !this.isPageReload) {
-        console.warn('[SocketService] No token and not page reload - cannot connect');
-        this.connectionInProgress = false;
-        throw new Error('No authentication token available');
-      }
-
-      // Only cleanup if not in page reload scenario
       if (!this.isPageReload) {
         this.cleanupSocket();
       } else if (this.socket && !this.socket.connected) {
-        // During reload, only cleanup if socket exists but isn't connected
         this.cleanupSocket();
       }
 
       console.log('[SocketService] Connecting to:', `${environment.wsUrl}/quiz`);
       
       const authData: any = {};
-      if (token) {
+      
+      // PRIORITY 1: Send JWT token for authenticated users
+      if (token && this.authService.isAuthenticated()) {
         authData.token = token;
+        console.log('[SocketService] Sending JWT token for authenticated user');
       }
-      if (currentUser) {
+      
+      // PRIORITY 2: Send user data for authenticated users
+      if (currentUser && this.authService.isAuthenticated()) {
         authData.user = JSON.stringify({
           userId: currentUser._id,
-          username: currentUser.username
+          username: currentUser.username,
+          isAuthenticated: true
         });
+        console.log('[SocketService] Sending authenticated user data:', currentUser.username);
+      }
+      
+      // PRIORITY 3: Only create guest if not authenticated
+      if (!this.authService.isAuthenticated()) {
+        authData.user = JSON.stringify({
+          userId: `guest-${Date.now()}`,
+          username: 'Guest',
+          isGuest: true
+        });
+        console.log('[SocketService] Creating guest user data');
       }
 
-      // Use forceNew: false to allow connection reuse
+      console.log('[SocketService] Final auth data:', {
+        isAuthenticated: this.authService.isAuthenticated(),
+        hasToken: !!authData.token,
+        hasUser: !!authData.user,
+        userType: this.authService.isAuthenticated() ? 'Authenticated' : 'Guest'
+      });
+
       this.socket = io(`${environment.wsUrl}/quiz`, {
         transports: ['websocket', 'polling'],
         auth: authData,
         autoConnect: true,
         reconnection: true,
-        reconnectionAttempts: this.maxReconnectAttempts,
+        reconnectionAttempts: 3,
         reconnectionDelay: 1000,
-        reconnectionDelayMax: 5000,
-        timeout: 8000, // Reduced timeout
-        forceNew: false, // Allow connection reuse
-        closeOnBeforeunload: false // Important: don't close on page reload
+        reconnectionDelayMax: 3000,
+        timeout: 5000,
+        forceNew: false,
+        closeOnBeforeunload: false
       });
 
       this.setupListeners();
 
       this.connectionTimeout = setTimeout(() => {
         if (!this.isConnected() && this.connectionInProgress) {
-          console.error('[SocketService] Connection timeout - server not responding');
-          this.handleConnectionError(new Error('Connection timeout'));
+          console.warn('[SocketService] Connection timeout - proceeding anyway');
           this.connectionInProgress = false;
         }
-      }, 8000);
+      }, 6000);
 
     } catch (error) {
       console.error('[SocketService] Connection setup error:', error);
-      this.initializationInProgress = false;
       this.connectionInProgress = false;
       this.connectionPromise = null;
-      this.handleConnectionError(error);
-      throw error;
     }
   }
 
-private cleanupSocket(): void {
+  private cleanupSocket(): void {
     if (this.socket) {
       console.log('[SocketService] Cleaning up existing socket');
       this.socket.removeAllListeners();
       
-      // Only disconnect if not in page reload scenario
       if (!this.isPageReload) {
         this.socket.disconnect();
       }
@@ -420,7 +419,6 @@ private cleanupSocket(): void {
       this.socket = null;
     }
   }
-
 
   public async getConnection(): Promise<boolean> {
     if (this.isConnected()) {
@@ -444,8 +442,8 @@ private cleanupSocket(): void {
       console.log('[SocketService] Already connected and initialized');
     }
   }
-    disconnect(): void {
-    // Only fully disconnect if this is not a page reload
+
+  disconnect(): void {
     if (this.isPageReload) {
       console.log('[SocketService] Page reload - skipping full disconnect');
       return;
@@ -475,14 +473,13 @@ private cleanupSocket(): void {
     }
   }
 
-    public async recoverConnection(): Promise<boolean> {
+  public async recoverConnection(): Promise<boolean> {
     if (this.isConnected()) {
       return true;
     }
 
     console.log('[SocketService] Attempting connection recovery');
     
-    // Reset state for recovery
     this.isPageReload = false;
     this.connectionInProgress = false;
     this.connectionPromise = null;
@@ -497,7 +494,7 @@ private cleanupSocket(): void {
     }
     console.log('[SocketService] Setting up WebSocket listeners');
 
-   this.socket.on('connect', () => {
+    this.socket.on('connect', () => {
       console.log('[SocketService] Connected to server, Socket ID:', this.socket?.id);
       if (this.connectionTimeout) {
         clearTimeout(this.connectionTimeout);
@@ -509,14 +506,12 @@ private cleanupSocket(): void {
       this.isManualDisconnect = false;
       this.connectionInProgress = false;
 
- // Clear page reload flag once connected
       this.isPageReload = false;
       sessionStorage.removeItem('isReloading');
       sessionStorage.removeItem('socketWasConnected');
       
       console.log('[SocketService] Socket connection fully ready for requests');
       
-      // Request online users after connection
       setTimeout(() => {
         this.requestOnlineUsers();
       }, 300);
@@ -766,11 +761,12 @@ private cleanupSocket(): void {
         return;
       }
       
-      console.log(`[SocketService]   Emitting getSoloQuestions for ${count} questions`);
+      console.log(`[SocketService] Emitting getSoloQuestions for ${count} questions`);
       this.socket.emit('getSoloQuestions', { count, mode: 'solo' });
       resolve(true);
     });
   }
+
   emitSubmitSoloAnswer(quizId: string, questionIndex: number, answerIndex: number, timeSpent: number): Promise<boolean> {
     return new Promise(async (resolve) => {
       if (!this.isConnected() || !this.socket) {
@@ -872,7 +868,7 @@ private cleanupSocket(): void {
         return;
       }
       
-      console.log('[SocketService]  Starting sequential quiz:', quizId, questionCount);
+      console.log('[SocketService] Starting sequential quiz:', quizId, questionCount);
       this.socket.emit('startSequentialQuiz', { quizId, questionCount });
       resolve(true);
     });
@@ -898,7 +894,7 @@ private cleanupSocket(): void {
         return;
       }
       
-      console.log('[SocketService]  Joining sequential quiz:', quizId);
+      console.log('[SocketService] Joining sequential quiz:', quizId);
       this.socket.emit('joinSequentialQuiz', { quizId });
       resolve(true);
     });
@@ -924,7 +920,7 @@ private cleanupSocket(): void {
         return;
       }
       
-      console.log('[SocketService]  Requesting next question for quiz:', quizId);
+      console.log('[SocketService] Requesting next question for quiz:', quizId);
       this.socket.emit('requestNextQuestion', { quizId });
       resolve(true);
     });
@@ -955,7 +951,7 @@ private cleanupSocket(): void {
         return;
       }
       
-      console.log('[SocketService]  Submitting sequential answer:', { 
+      console.log('[SocketService] Submitting sequential answer:', { 
         quizId, 
         questionIndex, 
         answerIndex, 
@@ -992,7 +988,7 @@ private cleanupSocket(): void {
         return;
       }
       
-      console.log('[SocketService]  Requesting questions for online mode:', payload);
+      console.log('[SocketService] Requesting questions for online mode:', payload);
       this.socket.emit('requestQuestions', {
         ...payload,
         timestamp: Date.now(),
@@ -1026,7 +1022,7 @@ private cleanupSocket(): void {
         return;
       }
       
-      console.log('[SocketService]  Requesting consistent questions with seed:', payload.seed);
+      console.log('[SocketService] Requesting consistent questions with seed:', payload.seed);
       this.socket.emit('requestConsistentQuestions', {
         ...payload,
         timestamp: Date.now(),
@@ -1058,7 +1054,7 @@ private cleanupSocket(): void {
         return;
       }
       
-      console.log('[SocketService]  Creating synchronized quiz:', quizId, questionCount);
+      console.log('[SocketService] Creating synchronized quiz:', quizId, questionCount);
       this.socket.emit('createSynchronizedQuiz', { quizId, questionCount });
       resolve(true);
     });
@@ -1110,7 +1106,7 @@ private cleanupSocket(): void {
         return;
       }
       
-      console.log('[SocketService]  Submitting synchronized answer:', { quizId, questionIndex, answerIndex });
+      console.log('[SocketService] Submitting synchronized answer:', { quizId, questionIndex, answerIndex });
       this.socket.emit('submitSynchronizedAnswer', { quizId, questionIndex, answerIndex });
       resolve(true);
     });
@@ -1152,7 +1148,7 @@ private cleanupSocket(): void {
         return;
       }
       
-      console.log('[SocketService]  Submitting answer:', { questionId, answerIndex, mode });
+      console.log('[SocketService] Submitting answer:', { questionId, answerIndex, mode });
       this.socket.emit('submitAnswer', {
         questionId,
         answerIndex,
@@ -1187,7 +1183,7 @@ private cleanupSocket(): void {
         return;
       }
       
-      console.log('[SocketService]  Requesting question:', payload);
+      console.log('[SocketService] Requesting question:', payload);
       this.socket.emit('requestQuestion', { ...payload, timestamp: Date.now() });
       resolve(true);
     });
@@ -1213,7 +1209,7 @@ private cleanupSocket(): void {
         return;
       }
       
-      console.log('[SocketService]  Ready for next question:', payload);
+      console.log('[SocketService] Ready for next question:', payload);
       this.socket.emit('readyForNextQuestion', { ...payload, timestamp: Date.now() });
       resolve(true);
     });
@@ -1265,7 +1261,7 @@ private cleanupSocket(): void {
         return;
       }
       
-      console.log('[SocketService]  Player eliminated:', payload);
+      console.log('[SocketService] Player eliminated:', payload);
       this.socket.emit('playerEliminated', payload);
       resolve(true);
     });
@@ -1291,7 +1287,7 @@ private cleanupSocket(): void {
         return;
       }
       
-      console.log('[SocketService]  Player win:', payload);
+      console.log('[SocketService] Player win:', payload);
       this.socket.emit('playerWin', payload);
       resolve(true);
     });
@@ -1317,7 +1313,7 @@ private cleanupSocket(): void {
         return;
       }
       
-      console.log('[SocketService]  Game over:', payload);
+      console.log('[SocketService] Game over:', payload);
       this.socket.emit('gameOver', payload);
       resolve(true);
     });
@@ -1343,7 +1339,7 @@ private cleanupSocket(): void {
         return;
       }
       
-      console.log('[SocketService]  Determine winner:', payload);
+      console.log('[SocketService] Determine winner:', payload);
       this.socket.emit('determineWinner', { ...(payload || {}), timestamp: Date.now() });
       resolve(true);
     });
@@ -1354,12 +1350,12 @@ private cleanupSocket(): void {
   emitLeaveQuizSession(quizId: string): Promise<boolean> {
     return new Promise((resolve) => {
       if (!this.isConnected() || !this.socket) {
-        console.warn('[SocketService]  Socket not connected, cannot emit leaveQuizSession');
+        console.warn('[SocketService] Socket not connected, cannot emit leaveQuizSession');
         resolve(false);
         return;
       }
       
-      console.log(`🚪 [SocketService] Emitting leaveQuizSession for: ${quizId}`);
+      console.log(`[SocketService] Emitting leaveQuizSession for: ${quizId}`);
       this.socket.emit('leaveQuizSession', { quizId });
       resolve(true);
     });
@@ -1407,7 +1403,7 @@ private cleanupSocket(): void {
       }, 1000);
       
     } catch (error) {
-      console.error('[SocketService]  Error during logout:', error);
+      console.error('[SocketService] Error during logout:', error);
       this.redirectToLogin();
     }
   }
@@ -1423,14 +1419,14 @@ private cleanupSocket(): void {
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++;
       const delay = Math.min(1000 * this.reconnectAttempts, 10000);
-      console.log(`[SocketService]  Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
+      console.log(`[SocketService] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
       setTimeout(() => {
         if (this.shouldReconnect && !this.isPageReload) {
           this.connect();
         }
       }, delay);
     } else {
-      console.error('[SocketService]  Max reconnection attempts reached');
+      console.error('[SocketService] Max reconnection attempts reached');
       this.connectionStatus$.next(false);
       this.connectionReadySubject.next(false);
     }
@@ -1450,7 +1446,7 @@ private cleanupSocket(): void {
 
   private redirectToLogin(): void {
     if (typeof window !== 'undefined') {
-      console.log('[SocketService]  Redirecting to login page');
+      console.log('[SocketService] Redirecting to login page');
       const currentPath = window.location.pathname;
       const loginUrl = `/login?returnUrl=${encodeURIComponent(currentPath)}`;
       window.location.href = loginUrl;
@@ -1598,7 +1594,7 @@ private cleanupSocket(): void {
           if (success) {
             setTimeout(() => {
               if (this.socket && this.isConnected()) {
-                console.log('[SocketService]  Retrying online users request after reconnect');
+                console.log('[SocketService] Retrying online users request after reconnect');
                 this.socket.emit('getOnlineUsers');
               }
             }, 1000);
@@ -1608,7 +1604,7 @@ private cleanupSocket(): void {
       return;
     }
     
-    console.log('[SocketService]  Requesting online users');
+    console.log('[SocketService] Requesting online users');
     this.socket.emit('getOnlineUsers');
   }
 
@@ -1652,7 +1648,7 @@ private cleanupSocket(): void {
   onTimeExpired(): Observable<any> {
     return new Observable(observer => {
       if (!this.socket) {
-        console.error('[SocketService]   Cannot listen to timeExpired - socket is null');
+        console.error('[SocketService] Cannot listen to timeExpired - socket is null');
         return;
       }
       
@@ -1673,7 +1669,7 @@ private cleanupSocket(): void {
 
   // Debug connection state
   public debugConnectionState(): void {
-    console.log(' [SocketService] Connection Debug:', {
+    console.log('[SocketService] Connection Debug:', {
       isInitialized: this.isInitialized,
       initializationInProgress: this.initializationInProgress,
       connectionInProgress: this.connectionInProgress,
@@ -1709,6 +1705,7 @@ private cleanupSocket(): void {
       hasToken: !!token,
       userId: currentUser?._id,
       username: currentUser?.username,
+      isAuthenticated: this.authService.isAuthenticated(),
       wsUrl: environment.wsUrl
     });
   }

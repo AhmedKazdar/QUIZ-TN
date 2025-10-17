@@ -135,17 +135,17 @@ export class QuizService {
 
     // Fastest Winner Listener
     const fastestWinnerSub = this.socketService.onFastestWinnerDeclared().subscribe((data: any) => {
-      console.log('🏆 Fastest winner event received in QuizService:', data);
+      console.log(' Fastest winner event received in QuizService:', data);
     });
 
     // Sequential Answer Result Listener
     const sequentialAnswerResultSub = this.socketService.onSequentialAnswerResult().subscribe((data: any) => {
-      console.log('✅ Sequential answer result received:', data);
+      console.log(' Sequential answer result received:', data);
     });
 
     // Solo Answer Validation Result Listener - REMOVED component logic
     const soloAnswerValidationSub = this.socketService.onSoloAnswerValidation().subscribe((data: any) => {
-      console.log('✅ Solo answer validation result received in QuizService:', data);
+      console.log(' Solo answer validation result received in QuizService:', data);
       // Just log the result - component will handle the actual logic
     });
 
@@ -167,7 +167,7 @@ export class QuizService {
    */
   validateSoloAnswers(data: SoloAnswerValidationRequest): Observable<QuizResult> {
     return new Observable((observer) => {
-      console.log('🎯 Submitting solo answers for validation:', data);
+      console.log(' Submitting solo answers for validation:', data);
 
       // Emit the validation request to the server
       this.socketService.emitValidateSoloAnswers(data);
@@ -177,13 +177,13 @@ export class QuizService {
         .pipe(
           timeout(10000),
           catchError((error: any) => {
-            console.error('❌ Timeout waiting for solo answer validation:', error);
+            console.error(' Timeout waiting for solo answer validation:', error);
             return throwError(() => new Error('Answer validation timed out'));
           })
         )
         .subscribe({
           next: (validationData: any) => {
-            console.log('✅ Received solo answer validation result:', validationData);
+            console.log(' Received solo answer validation result:', validationData);
             
             if (validationData && validationData.validated) {
               const result: QuizResult = {
@@ -203,7 +203,7 @@ export class QuizService {
             }
           },
           error: (error: any) => {
-            console.error('❌ Error in solo answer validation:', error);
+            console.error(' Error in solo answer validation:', error);
             observer.error(error);
           }
         });
@@ -215,13 +215,13 @@ export class QuizService {
 leaveQuizSession(quizId: string): Observable<any> {
   return new Observable(observer => {
     if (!this.socketService.isConnected()) {
-      console.warn('❌ [QuizService] Socket not connected for leaveQuizSession');
+      console.warn(' Socket not connected for leaveQuizSession');
       observer.next({ success: false, message: 'Socket not connected' });
       observer.complete();
       return;
     }
 
-    console.log(`🚪 [QuizService] Leaving quiz session: ${quizId}`);
+    console.log(` Leaving quiz session: ${quizId}`);
     
     // Emit the leave event to the backend
     this.socketService.emitLeaveQuizSession(quizId);
@@ -239,16 +239,15 @@ leaveQuizSession(quizId: string): Observable<any> {
   });
 }
 
-  onFastestWinnerDeclared(): Observable<any> {
-    return this.socketService.onFastestWinnerDeclared();
-  }
-
+ onFastestWinnerDeclared(): Observable<any> {
+  return this.socketService.onFastestWinnerDeclared();
+}
   // ========== SEQUENTIAL QUIZ METHODS ==========
 
   // Add similar checks to all your WebSocket methods
   startSequentialQuiz(quizId: string, questionCount: number): void {
     if (!this.socketService.isConnected()) {
-      console.error('❌ Cannot start sequential quiz - WebSocket not connected');
+      console.error(' Cannot start sequential quiz - WebSocket not connected');
       return;
     }
     this.socketService.emitStartSequentialQuiz(quizId, questionCount);
@@ -316,7 +315,7 @@ onSoloAnswerValidation(): Observable<any> {
   // ========== EXISTING METHODS (Keep for backward compatibility) ==========
 
   getMockQuestions(count = 10): Observable<Question[]> {
-    console.log('🎯 Using mock questions as fallback');
+    console.log(' Using mock questions as fallback');
     
     const mockQuestions: Question[] = [
       {
@@ -358,7 +357,7 @@ onSoloAnswerValidation(): Observable<any> {
   }
 
   private requestSoloQuestionsViaSocket(count: number, observer: any): void {
-  console.log(`🎯 [Solo] Emitting getSoloQuestions for ${count} questions`);
+  console.log(` [Solo] Emitting getSoloQuestions for ${count} questions`);
   
   this.socketService.emitGetSoloQuestions(count);
   
@@ -366,13 +365,13 @@ onSoloAnswerValidation(): Observable<any> {
     .pipe(
       timeout(15000),
       catchError((error: any) => {
-        console.error('❌ Timeout waiting for solo questions:', error);
+        console.error(' Timeout waiting for solo questions:', error);
         return throwError(() => new Error('Solo questions request timed out'));
       })
     )
     .subscribe({
       next: (data: any) => {
-        console.log('✅ Received soloQuestionsLoaded event:', data);
+        console.log('Received soloQuestionsLoaded event:', data);
         if (data?.questions?.length > 0) {
           // Questions are already sanitized (no isCorrect) from backend
           this.currentQuiz = data.questions;
@@ -380,19 +379,19 @@ onSoloAnswerValidation(): Observable<any> {
           observer.next(data.questions);
           observer.complete();
         } else {
-          console.warn('❌ No questions received in solo response');
+          console.warn(' No questions received in solo response');
           observer.error(new Error('No questions received from server for solo mode'));
         }
       },
       error: (error: any) => {
-        console.error('❌ Error in soloQuestionsLoaded subscription:', error);
+        console.error(' Error in soloQuestionsLoaded subscription:', error);
         observer.error(error);
       }
     });
 
   const errorSub = this.socketService.onSoloQuestionsError()
     .subscribe((error: any) => {
-      console.error('❌ Received soloQuestionsError event:', error);
+      console.error('Received soloQuestionsError event:', error);
       observer.error(new Error(error?.message || 'Failed to load solo questions via WebSocket'));
     });
 
@@ -401,7 +400,7 @@ onSoloAnswerValidation(): Observable<any> {
 }
 
 submitSoloAnswer(quizId: string, questionIndex: number, answerIndex: number, timeSpent: number): void {
-  console.log(`🎯 [Solo] Submitting answer via WebSocket:`, {
+  console.log(` [Solo] Submitting answer via WebSocket:`, {
     quizId,
     questionIndex,
     answerIndex,
@@ -436,19 +435,19 @@ submitSoloAnswer(quizId: string, questionIndex: number, answerIndex: number, tim
   private waitForSocketReady(): Observable<boolean> {
     return new Observable((observer) => {
       if (this.socketService.isConnected()) {
-        console.log('✅ Socket already connected, checking authentication...');
+        console.log(' Socket already connected, checking authentication...');
         
         const authSub = this.socketService.onAuthenticationSuccess().pipe(
           timeout(5000),
           catchError(() => of(null))
         ).subscribe({
           next: (authData) => {
-            console.log('✅ Authentication confirmed, socket is ready');
+            console.log(' Authentication confirmed, socket is ready');
             observer.next(true);
             observer.complete();
           },
           error: (error) => {
-            console.warn('⚠️ Auth check timeout, proceeding anyway');
+            console.warn(' Auth check timeout, proceeding anyway');
             observer.next(true);
             observer.complete();
           }
@@ -461,7 +460,7 @@ submitSoloAnswer(quizId: string, questionIndex: number, answerIndex: number, tim
         }, 1000);
         
       } else {
-        console.log('🔄 Socket not connected, waiting for connection...');
+        console.log(' Socket not connected, waiting for connection...');
         
         const connectionSub = this.socketService.getConnectionStatus().pipe(
           filter(connected => connected === true),
@@ -470,7 +469,7 @@ submitSoloAnswer(quizId: string, questionIndex: number, answerIndex: number, tim
         ).subscribe({
           next: (connected) => {
             if (connected) {
-              console.log('✅ Socket connected, now checking authentication...');
+              console.log(' Socket connected, now checking authentication...');
               setTimeout(() => {
                 observer.next(true);
                 observer.complete();
@@ -486,7 +485,7 @@ submitSoloAnswer(quizId: string, questionIndex: number, answerIndex: number, tim
   }
   
   private requestSoloQuestions(count: number, observer: any): void {
-    console.log(`🎯 Requesting ${count} solo questions`);
+    console.log(` Requesting ${count} solo questions`);
     
     this.socketService.emitGetSoloQuestions(count);
     
@@ -494,32 +493,32 @@ submitSoloAnswer(quizId: string, questionIndex: number, answerIndex: number, tim
       .pipe(
         timeout(15000),
         catchError((error: any) => {
-          console.error('❌ Timeout waiting for solo questions:', error);
+          console.error('Timeout waiting for solo questions:', error);
           return throwError(() => new Error('Questions request timed out. Please try again.'));
         })
       )
       .subscribe({
         next: (data: any) => {
-          console.log('✅ Received soloQuestionsLoaded event:', data);
+          console.log('Received soloQuestionsLoaded event:', data);
           if (data?.questions?.length > 0) {
             this.currentQuiz = data.questions;
             this.currentAnswers = new Array(data.questions.length).fill(-1);
             observer.next(data.questions);
             observer.complete();
           } else {
-            console.warn('❌ No questions received in the response');
+            console.warn(' No questions received in the response');
             observer.error(new Error('No questions received from server'));
           }
         },
         error: (error: any) => {
-          console.error('❌ Error in soloQuestionsLoaded subscription:', error);
+          console.error(' Error in soloQuestionsLoaded subscription:', error);
           observer.error(error);
         }
       });
   
     const errorSub = this.socketService.onSoloQuestionsError()
       .subscribe((error: any) => {
-        console.error('❌ Received soloQuestionsError event:', error);
+        console.error(' Received soloQuestionsError event:', error);
         observer.error(new Error(error?.message || 'Failed to load questions'));
       });
   
