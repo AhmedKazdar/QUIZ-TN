@@ -8,7 +8,7 @@ export const environment = {
   wsReconnectionDelay: 1000,  // Time to wait before attempting to reconnect (ms)
   wsReconnectionDelayMax: 5000,  // Maximum time to wait between reconnections (ms)
   wsTimeout: 20000,  // Connection timeout (ms)
-  enableDevOverride: true  ,
+  enableDevOverride: false ,
   // Production settings
   useMockData: false,  // Always use real API in production
   apiTimeout: 10000,   // 10 seconds timeout for API calls
